@@ -27,6 +27,9 @@ permissions:
 
 env:
   BUILD_TYPE: ${{ inputs.build_type || 'Release' }}
+  # Upstream pins aqtinstall for the Windows leg; the PyPI release is known to
+  # regress on Windows hosts. Keep in sync with android-build.yml.
+  AQT_SOURCE: 'git+https://github.com/miurahr/aqtinstall.git@8d961e61720b3c06583517fbc68d57ec0a4e9f95'
 
 jobs:
   windows-x64:
@@ -53,6 +56,7 @@ jobs:
         with:
           qt-host: windows
           qt-arch: win64_msvc2022_64
+          aqt-source: ${{ env.AQT_SOURCE }}
           build-type: ${{ env.BUILD_TYPE }}
 
       - name: Configure
@@ -63,6 +67,25 @@ jobs:
           preset: ${{ env.BUILD_TYPE == 'Debug' && 'Windows-debug' || 'Windows' }}
           extra-args: >-
             -DQGC_ENABLE_GST_VIDEOSTREAMING=ON
+            -DQGC_CPACK_GENERATOR=NSIS
+
+      # GStreamer lives outside the Qt sysroot; the build (and any post-build
+      # tooling) needs it on PATH, otherwise the link/runtime probes fail.
+      - name: Resolve GStreamer root
+        id: gst-root
+        shell: bash
+        run: |
+          python3 "${GITHUB_WORKSPACE}/.github/scripts/cmake_helper.py" cache-var \
+            --build-dir "${RUNNER_TEMP}/build" \
+            --name GStreamer_ROOT_DIR \
+            --required \
+            --output-key gst_root
+
+      - name: Add GStreamer to PATH
+        shell: bash
+        run: echo "${STEPS_GST_ROOT_OUTPUTS_GST_ROOT}/bin" >> "$GITHUB_PATH"
+        env:
+          STEPS_GST_ROOT_OUTPUTS_GST_ROOT: ${{ steps.gst-root.outputs.gst_root }}
 
       - name: Build
         uses: ./.github/actions/cmake-build
