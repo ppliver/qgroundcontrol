@@ -52,6 +52,12 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
+      - name: Install host build dependencies
+        uses: ./.github/actions/install-dependencies
+        with:
+          nsis: 'true'
+          gstreamer: 'false'
+
       - name: Build Setup
         id: build-setup
         uses: ./.github/actions/build-setup
