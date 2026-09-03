@@ -44,7 +44,7 @@ env:
 
 jobs:
   windows-x64:
-    name: Windows x64 ${{ env.BUILD_TYPE }}
+    name: Windows x64 ${{ inputs.build_type || 'Release' }}
     runs-on: windows-2022
     timeout-minutes: 180
 
@@ -143,7 +143,7 @@ jobs:
           retention-days: 7
 
   android:
-    name: Android arm64 ${{ env.BUILD_TYPE }}
+    name: Android arm64 ${{ inputs.build_type || 'Release' }}
     if: ${{ !inputs.skip_android }}
     runs-on: ubuntu-latest
     timeout-minutes: 120
