@@ -3,21 +3,7 @@ name: Crowdin Translations
 # https://github.com/crowdin/github-action/tree/master
 
 on:
-  push:
-    branches: [master]
-    paths: ['docs/en/**']
-  schedule:
-    - cron: '0 0 * * 0'  # Download translations every Sunday
   workflow_dispatch:
-    inputs:
-      action:
-        description: 'Action to perform'
-        required: true
-        default: 'upload'
-        type: choice
-        options:
-          - upload
-          - download
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}

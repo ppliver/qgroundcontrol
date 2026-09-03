@@ -1,12 +1,6 @@
 name: Doxygen API Docs
 
 on:
-  schedule:
-    - cron: '0 4 * * 0'  # Sunday 04:00 UTC
-  pull_request:
-    paths:
-      - 'Doxyfile'
-      - 'src/**'
   workflow_dispatch:
 
 permissions:

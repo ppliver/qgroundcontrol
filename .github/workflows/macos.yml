@@ -1,26 +1,7 @@
 name: MacOS
 
 on:
-  push:
-    branches:
-      - master
-      - 'Stable*'
-    tags:
-      - 'v*'
-    paths-ignore:
-      - 'docs/**'
-  pull_request:
-  merge_group:
   workflow_dispatch:
-    inputs:
-      build_type:
-        description: 'Build type'
-        required: false
-        default: 'Release'
-        type: choice
-        options:
-          - Release
-          - Debug
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}

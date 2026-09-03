@@ -30,6 +30,7 @@ class VideoManager : public QObject
     Q_PROPERTY(bool     autoStreamConfigured    READ autoStreamConfigured                       NOTIFY autoStreamConfiguredChanged)
     Q_PROPERTY(bool     decoding                READ decoding                                   NOTIFY decodingChanged)
     Q_PROPERTY(bool     fullScreen              READ fullScreen             WRITE setfullScreen NOTIFY fullScreenChanged)
+    Q_PROPERTY(bool     hasSecondaryVideo       READ hasSecondaryVideo                          NOTIFY hasSecondaryVideoChanged)
     Q_PROPERTY(bool     hasThermal              READ hasThermal                                 NOTIFY decodingChanged)
     Q_PROPERTY(bool     hasVideo                READ hasVideo                                   NOTIFY hasVideoChanged)
     Q_PROPERTY(bool     isStreamSource          READ isStreamSource                             NOTIFY isStreamSourceChanged)
@@ -65,6 +66,7 @@ public:
     bool autoStreamConfigured() const;
     bool decoding() const { return _decoding; }
     bool fullScreen() const { return _fullScreen; }
+    bool hasSecondaryVideo() const;
     bool hasThermal() const;
     bool hasVideo() const;
     bool isStreamSource() const;
@@ -85,6 +87,7 @@ signals:
     void autoStreamConfiguredChanged();
     void decodingChanged();
     void fullScreenChanged();
+    void hasSecondaryVideoChanged();
     void hasVideoChanged();
     void imageFileChanged(const QString &filename);
     void isAutoStreamChanged();

@@ -20,7 +20,7 @@ bool RTCMUdpInput::start()
     _rtcmParser.reset();
 
     _socket = new QUdpSocket(this);
-    if (!_socket->bind(QHostAddress::AnyIPv4, _port)) {
+    if (!_socket->bind(QHostAddress::Any, _port)) {
         qCWarning(RTCMUdpInputLog) << "Failed to bind UDP socket on port" << _port << ":" << _socket->errorString();
         _socket->deleteLater();
         _socket = nullptr;

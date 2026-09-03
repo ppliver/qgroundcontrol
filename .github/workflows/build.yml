@@ -1,0 +1,222 @@
+name: Build (Fork)
+
+# Fork-friendly build workflow: compiles Windows x64 and Android (arm64-v8a)
+# clients and uploads them as workflow artifacts. No signing secrets, no AWS,
+# no Play Store — the Android APK is signed with an ephemeral debug keystore.
+
+on:
+  push:
+    branches:
+      - master
+      - main
+    paths-ignore:
+      - 'docs/**'
+  pull_request:
+    paths-ignore:
+      - 'docs/**'
+  workflow_dispatch:
+    inputs:
+      build_type:
+        description: 'Build type'
+        required: false
+        default: 'Release'
+        type: choice
+        options:
+          - Release
+          - Debug
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  AQT_SOURCE: 'git+https://github.com/miurahr/aqtinstall.git@8d961e61720b3c06583517fbc68d57ec0a4e9f95'
+
+jobs:
+  windows-x64:
+    name: Windows x64 ${{ inputs.build_type || 'Release' }}
+    runs-on: windows-2022
+    timeout-minutes: 120
+
+    env:
+      BUILD_TYPE: ${{ inputs.build_type || 'Release' }}
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          # Native package versions come from git describe and require reachable tags.
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Build Setup
+        id: build-setup
+        uses: ./.github/actions/build-setup
+        with:
+          qt-host: windows
+          qt-arch: win64_msvc2022_64
+          aqt-source: ${{ env.AQT_SOURCE }}
+          build-type: ${{ env.BUILD_TYPE }}
+
+      - name: Configure
+        uses: ./.github/actions/cmake-configure
+        with:
+          build-dir: ${{ runner.temp }}/build
+          build-type: ${{ env.BUILD_TYPE }}
+          preset: ${{ env.BUILD_TYPE == 'Debug' && 'Windows-debug' || 'Windows' }}
+          extra-args: >-
+            -DQGC_ENABLE_GST_VIDEOSTREAMING=ON
+            -DQGC_CPACK_GENERATOR=NSIS
+
+      - name: Resolve GStreamer root
+        id: gst-root
+        shell: bash
+        run: |
+          python3 "${GITHUB_WORKSPACE}/.github/scripts/cmake_helper.py" cache-var \
+            --build-dir "${RUNNER_TEMP}/build" \
+            --name GStreamer_ROOT_DIR \
+            --required \
+            --output-key gst_root
+
+      - name: Add GStreamer to PATH
+        shell: bash
+        run: echo "${STEPS_GST_ROOT_OUTPUTS_GST_ROOT}/bin" >> "$GITHUB_PATH"
+        env:
+          STEPS_GST_ROOT_OUTPUTS_GST_ROOT: ${{ steps.gst-root.outputs.gst_root }}
+
+      - name: Build
+        uses: ./.github/actions/cmake-build
+        with:
+          build-dir: ${{ runner.temp }}/build
+          build-type: ${{ env.BUILD_TYPE }}
+
+      - name: Create Installer
+        uses: ./.github/actions/cmake-build
+        with:
+          build-dir: ${{ runner.temp }}/build
+          build-type: ${{ env.BUILD_TYPE }}
+          target: qgc-package
+          parallel: 'false'
+
+      - name: Upload Installer Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: QGroundControl-Windows-x64
+          path: |
+            ${{ runner.temp }}/build/QGroundControl-installer-AMD64.exe
+            ${{ runner.temp }}/build/QGroundControl-installer-AMD64.exe.sha256
+          if-no-files-found: error
+          retention-days: 14
+
+  android:
+    name: Android arm64 ${{ inputs.build_type || 'Release' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+
+    env:
+      BUILD_TYPE: ${{ inputs.build_type || 'Release' }}
+      PACKAGE: QGroundControl
+      QT_ANDROID_ABIS: arm64-v8a
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Set Android SDK location
+        shell: bash
+        run: |
+          echo "ANDROID_SDK_ROOT=${RUNNER_TEMP}/android-sdk" >> "$GITHUB_ENV"
+          echo "ANDROID_HOME=${RUNNER_TEMP}/android-sdk" >> "$GITHUB_ENV"
+
+      - name: Build Setup (Android)
+        id: setup
+        uses: ./.github/actions/build-setup
+        with:
+          mode: android
+          qt-host: linux
+          qt-arch: android_arm64_v8a
+          aqt-source: ${{ env.AQT_SOURCE }}
+          abis: ${{ env.QT_ANDROID_ABIS }}
+          build-type: ${{ env.BUILD_TYPE }}
+          cpm-modules: ${{ runner.temp }}/build/cpm_modules
+
+      - name: Install host build dependencies
+        uses: ./.github/actions/install-dependencies
+
+      - name: Create Debug Keystore
+        shell: bash
+        run: |
+          keytool -genkey -v \
+            -keystore "${RUNNER_TEMP}/debug.keystore" \
+            -storepass android -alias androiddebugkey -keypass android \
+            -keyalg RSA -keysize 2048 -validity 10000 \
+            -dname "CN=Android Debug,O=Android,C=US"
+          {
+            echo "QT_ANDROID_KEYSTORE_PATH=${RUNNER_TEMP}/debug.keystore"
+            echo "QT_ANDROID_KEYSTORE_ALIAS=androiddebugkey"
+            echo "QT_ANDROID_KEYSTORE_STORE_PASS=android"
+            echo "QT_ANDROID_KEYSTORE_KEY_PASS=android"
+          } >> "$GITHUB_ENV"
+
+      - name: Configure
+        uses: ./.github/actions/cmake-configure
+        with:
+          build-dir: ${{ runner.temp }}/build
+          build-type: ${{ env.BUILD_TYPE }}
+          preset: ${{ env.BUILD_TYPE == 'Debug' && 'Android-debug' || 'Android' }}
+          use-qt-cmake: 'false'
+          extra-args: >-
+            -DCMAKE_WARN_DEPRECATED=FALSE
+            -DCMAKE_TOOLCHAIN_FILE=${{ steps.setup.outputs.target_qt_root_dir }}/lib/cmake/Qt6/qt.toolchain.cmake
+            -DCMAKE_PREFIX_PATH=${{ steps.setup.outputs.target_qt_root_dir }}
+            -DQT_ANDROID_ABIS=${{ env.QT_ANDROID_ABIS }}
+            -DQT_HOST_PATH=${{ steps.setup.outputs.host_qt_root_dir }}
+            -DQT_ANDROID_SIGN_APK=ON
+
+      - name: Build
+        timeout-minutes: 75
+        env:
+          GRADLE_OPTS: -Dorg.gradle.daemon=false
+        uses: ./.github/actions/cmake-build
+        with:
+          build-dir: ${{ runner.temp }}/build
+          build-type: ${{ env.BUILD_TYPE }}
+          output-file: qgc-build.log
+
+      - name: Prepare Artifact
+        shell: bash
+        run: |
+          TEMP_DIR="${RUNNER_TEMP//\\//}"
+          APK_DIR="${TEMP_DIR}/build/android-build"
+          if ! ls "${APK_DIR}"/*.apk 1>/dev/null 2>&1; then
+            echo "::error::No APK files found in ${APK_DIR}"
+            ls -la "${APK_DIR}" 2>/dev/null || echo "Build directory does not exist"
+            exit 1
+          fi
+          cp "${APK_DIR}"/*.apk "${TEMP_DIR}/build/${{ env.PACKAGE }}.apk"
+
+      - name: Upload APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: QGroundControl-Android-arm64
+          path: ${{ runner.temp }}/build/QGroundControl.apk
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload build log on failure
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-build-log
+          path: |
+            ${{ runner.temp }}/build/qgc-build.log
+            ${{ runner.temp }}/build/CMakeFiles/CMakeOutput.log
+            ${{ runner.temp }}/build/CMakeFiles/CMakeError.log
+          if-no-files-found: ignore
+          retention-days: 7

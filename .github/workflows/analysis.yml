@@ -2,28 +2,6 @@ name: Code Analysis
 
 on:
   workflow_dispatch:
-    inputs:
-      tool:
-        description: 'Analysis tool to run'
-        required: true
-        default: 'clazy'
-        type: choice
-        options:
-          - clazy
-          - iwyu
-          - asan
-          - ubsan
-          - tsan
-      path:
-        description: 'Path to analyze (clazy/iwyu only, e.g., src/Vehicle/)'
-        required: false
-        default: ''
-        type: string
-      analyze_all:
-        description: 'Analyze all source files (clazy/iwyu only)'
-        required: false
-        default: true
-        type: boolean
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}-${{ inputs.tool }}

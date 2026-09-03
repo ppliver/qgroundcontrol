@@ -1,17 +1,7 @@
 name: pre-commit
 
 on:
-  push:
-    branches:
-      - master
-      - 'Stable*'
-    paths-ignore:
-      - 'docs/**'
-      - 'translations/**'
-  pull_request:
-    paths-ignore:
-      - 'docs/**'
-      - 'translations/**'
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}

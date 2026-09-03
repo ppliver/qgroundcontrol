@@ -229,6 +229,24 @@ DECLARE_SETTINGSFACT_NO_FUNC(VideoSettings, tcpUrl)
     return _tcpUrlFact;
 }
 
+DECLARE_SETTINGSFACT_NO_FUNC(VideoSettings, secondaryVideoEnabled)
+{
+    if (!_secondaryVideoEnabledFact) {
+        _secondaryVideoEnabledFact = _createSettingsFact(secondaryVideoEnabledName);
+        connect(_secondaryVideoEnabledFact, &Fact::valueChanged, this, &VideoSettings::_configChanged);
+    }
+    return _secondaryVideoEnabledFact;
+}
+
+DECLARE_SETTINGSFACT_NO_FUNC(VideoSettings, secondaryVideoUrl)
+{
+    if (!_secondaryVideoUrlFact) {
+        _secondaryVideoUrlFact = _createSettingsFact(secondaryVideoUrlName);
+        connect(_secondaryVideoUrlFact, &Fact::valueChanged, this, &VideoSettings::_configChanged);
+    }
+    return _secondaryVideoUrlFact;
+}
+
 bool VideoSettings::streamConfigured(void)
 {
     //-- First, check if it's autoconfigured

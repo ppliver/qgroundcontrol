@@ -1,8 +1,7 @@
 name: PR Checks
 
 on:
-  pull_request_target:  # zizmor: ignore[dangerous-triggers] reads PR metadata, posts comments/labels; only checks out trusted base ref
-    types: [opened, edited, synchronize, reopened, closed]
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number }}

@@ -39,6 +39,24 @@
             "keywords": "tcp,video url,stream url"
         },
         {
+            "name": "secondaryVideoEnabled",
+            "shortDesc": "Enable the secondary (second) video stream window in the Fly View.",
+            "longDesc": "When enabled, an additional draggable/resizable video window is shown in the Fly View using the secondary video stream URL.",
+            "type": "bool",
+            "default": false,
+            "label": "Secondary Video Window",
+            "keywords": "secondary,second video,dual video,pip"
+        },
+        {
+            "name": "secondaryVideoUrl",
+            "shortDesc": "Full URL for the secondary video stream (e.g. rtsp://192.168.1.10:8554/cam2 or udp://0.0.0.0:5602).",
+            "longDesc": "Video URL for the secondary video window. Supported schemes follow the primary stream: rtsp://, udp://, udp265://, tcp://, mpegts://. Example: rtsp://192.168.1.10:8554/cam2",
+            "type": "string",
+            "default": "",
+            "label": "Secondary Video URL",
+            "keywords": "secondary,second video,dual video,rtsp,udp,tcp"
+        },
+        {
             "name": "videoSavePath",
             "shortDesc": "Video save directory",
             "longDesc": "Directory to save videos to.",

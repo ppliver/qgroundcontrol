@@ -7,27 +7,6 @@ name: Mirror GStreamer
 
 on:
   workflow_dispatch:
-    inputs:
-      version:
-        description: 'GStreamer version (empty = build-config default)'
-        required: false
-        default: ''
-        type: string
-      platforms:
-        description: "Platforms to mirror ('all' or comma list: android,ios,macos,windows)"
-        required: false
-        default: 'all'
-        type: string
-      dry_run:
-        description: 'Download and verify only; do not upload'
-        required: false
-        default: false
-        type: boolean
-      force:
-        description: 'Re-upload even if the object already exists'
-        required: false
-        default: false
-        type: boolean
 
 concurrency:
   group: mirror-gstreamer-${{ inputs.version }}-${{ inputs.platforms }}

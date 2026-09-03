@@ -38,6 +38,7 @@ qt_add_qml_module(FlyViewModule
         FlyViewMapClickDropPanel.qml
         FlyViewMissionCompleteDialog.qml
         FlyViewPreFlightChecklistPopup.qml
+        FlyViewSecondaryVideo.qml
         FlyViewToolStrip.qml
         FlyViewToolStripActionList.qml
 

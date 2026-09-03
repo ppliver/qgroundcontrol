@@ -523,7 +523,7 @@ void LinkManager::_updateAutoConnectLinks()
         if ((_nmeaSocket->localPort() != _autoConnectSettings->nmeaUdpPort()->rawValue().toUInt()) || (_nmeaSocket->state() != UdpIODevice::BoundState)) {
             qCDebug(LinkManagerLog) << "Changing port for UDP NMEA stream";
             _nmeaSocket->close();
-            _nmeaSocket->bind(QHostAddress::AnyIPv4, _autoConnectSettings->nmeaUdpPort()->rawValue().toUInt());
+            _nmeaSocket->bind(QHostAddress::Any, _autoConnectSettings->nmeaUdpPort()->rawValue().toUInt());
             QGCPositionManager::instance()->setNmeaSourceDevice(_nmeaSocket);
         }
     } else {

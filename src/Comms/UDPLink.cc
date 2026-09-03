@@ -12,6 +12,8 @@
 #include <QtNetwork/QNetworkProxy>
 #include <QtNetwork/QUdpSocket>
 
+#include <cstdint>
+
 QGC_LOGGING_CATEGORY(UDPLinkLog, "Comms.UDPLink")
 
 namespace {
@@ -144,7 +146,32 @@ void UDPConfiguration::saveSettings(QSettings &settings, const QString &root) co
 
 void UDPConfiguration::addHost(const QString &host)
 {
-    if (host.contains(":")) {
+    if (host.startsWith('[')) {
+        // [IPv6 literal] or [IPv6 literal]:port
+        const qsizetype closeIdx = host.indexOf(']');
+        if (closeIdx < 0) {
+            qCWarning(UDPLinkLog) << "Invalid host format:" << host;
+            return;
+        }
+
+        const QString address = host.mid(1, closeIdx - 1);
+        if (closeIdx == host.size() - 1) {
+            addHost(address, _localPort);
+        } else if (host.at(closeIdx + 1) == ':') {
+            bool portOk = false;
+            const uint portValue = host.mid(closeIdx + 2).toUInt(&portOk);
+            if (!portOk || portValue > UINT16_MAX) {
+                qCWarning(UDPLinkLog) << "Invalid port in host:" << host;
+                return;
+            }
+            addHost(address, static_cast<quint16>(portValue));
+        } else {
+            qCWarning(UDPLinkLog) << "Invalid host format:" << host;
+        }
+    } else if (host.count(':') > 1) {
+        // Bare IPv6 literal without port (e.g. "::1" or "fe80::1%14")
+        addHost(host, _localPort);
+    } else if (host.contains(":")) {
         const QStringList hostInfo = host.split(":");
         if (hostInfo.size() != 2) {
             qCWarning(UDPLinkLog) << "Invalid host format:" << host;
@@ -182,7 +209,32 @@ void UDPConfiguration::addHost(const QString &host, quint16 port)
 
 void UDPConfiguration::removeHost(const QString &host)
 {
-    if (host.contains(":")) {
+    if (host.startsWith('[')) {
+        // [IPv6 literal] or [IPv6 literal]:port
+        const qsizetype closeIdx = host.indexOf(']');
+        if (closeIdx < 0) {
+            qCWarning(UDPLinkLog) << "Invalid host format:" << host;
+            return;
+        }
+
+        const QString address = host.mid(1, closeIdx - 1);
+        if (closeIdx == host.size() - 1) {
+            removeHost(address, _localPort);
+        } else if (host.at(closeIdx + 1) == ':') {
+            bool portOk = false;
+            const uint portValue = host.mid(closeIdx + 2).toUInt(&portOk);
+            if (!portOk || portValue > UINT16_MAX) {
+                qCWarning(UDPLinkLog) << "Invalid port in host:" << host;
+                return;
+            }
+            removeHost(address, static_cast<quint16>(portValue));
+        } else {
+            qCWarning(UDPLinkLog) << "Invalid host format:" << host;
+        }
+    } else if (host.count(':') > 1) {
+        // Bare IPv6 literal without port
+        removeHost(host, _localPort);
+    } else if (host.contains(":")) {
         const QStringList hostInfo = host.split(":");
         if (hostInfo.size() != 2) {
             qCWarning(UDPLinkLog) << "Invalid host format:" << host;
@@ -228,7 +280,9 @@ void UDPConfiguration::_updateHostList()
     _hostList.clear();
     for (const std::shared_ptr<UDPClient> &target : _targetHosts) {
         const QString name = target->hostname.isEmpty() ? target->address.toString() : target->hostname;
-        const QString host = name + ":" + QString::number(target->port);
+        // A ':' inside the name means it is an IPv6 literal (hostnames cannot
+        // contain colons) - wrap it in brackets so "host:port" stays parseable
+        const QString host = name.contains(':') ? QStringLiteral("[%1]:%2").arg(name).arg(target->port) : name + ":" + QString::number(target->port);
         _hostList.append(host);
     }
 
@@ -253,9 +307,15 @@ void UDPConfiguration::resolveHosts() const
 
 QString UDPConfiguration::_getIpAddress(const QString &address)
 {
-    const QHostAddress host(address);
-    if (!host.isNull()) {
-        return address;
+    QString host = address.trimmed();
+    if (host.startsWith('[') && host.endsWith(']')) {
+        // Strip IPv6 brackets (e.g. "[::1]" -> "::1")
+        host = host.mid(1, host.size() - 2);
+    }
+
+    const QHostAddress literal(host);
+    if (!literal.isNull()) {
+        return host;
     }
 
     const QHostInfo info = QHostInfo::fromName(address);
@@ -266,6 +326,12 @@ QString UDPConfiguration::_getIpAddress(const QString &address)
     const QList<QHostAddress> hostAddresses = info.addresses();
     for (const QHostAddress &hostAddress : hostAddresses) {
         if (hostAddress.protocol() == QAbstractSocket::NetworkLayerProtocol::IPv4Protocol) {
+            return hostAddress.toString();
+        }
+    }
+    for (const QHostAddress &hostAddress : hostAddresses) {
+        if (hostAddress.protocol() == QAbstractSocket::NetworkLayerProtocol::IPv6Protocol) {
+            // Fall back to IPv6 when no A record is available
             return hostAddress.toString();
         }
     }
@@ -347,7 +413,8 @@ void UDPWorker::connectLink()
     _udpConfig->resolveHosts();
 
     qCDebug(UDPLinkLog) << "Attempting to bind to port:" << _udpConfig->localPort();
-    const bool bindSuccess = _socket->bind(QHostAddress::AnyIPv4, _udpConfig->localPort(), QAbstractSocket::ReuseAddressHint | QAbstractSocket::ShareAddress);
+    // Dual-stack bind (IPv4 + IPv6). IPv4 peers appear as IPv4-mapped IPv6 addresses.
+    const bool bindSuccess = _socket->bind(QHostAddress::Any, _udpConfig->localPort(), QAbstractSocket::ReuseAddressHint | QAbstractSocket::ShareAddress);
     if (!bindSuccess) {
         qCWarning(UDPLinkLog) << "Failed to bind UDP socket to port" << _udpConfig->localPort();
 
@@ -365,9 +432,12 @@ void UDPWorker::connectLink()
     }
 
     qCDebug(UDPLinkLog) << "Attempting to join multicast group:" << _multicastGroup.toString();
+    // IPv4 multicast groups cannot be joined on a dual-stack (IPv6) socket on
+    // some platforms. This is expected and non-fatal: MAVLink discovery works
+    // over regular unicast/broadcast without the group membership.
     const bool joinSuccess = _socket->joinMulticastGroup(_multicastGroup);
     if (!joinSuccess) {
-        qCWarning(UDPLinkLog) << "Failed to join multicast group" << _multicastGroup.toString();
+        qCDebug(UDPLinkLog) << "Failed to join multicast group" << _multicastGroup.toString();
     }
 
 }
@@ -469,8 +539,21 @@ void UDPWorker::_onSocketReadyRead()
             (void) timer.restart();
         }
 
-        const bool ipLocal = datagramIn.senderAddress().isLoopback() || _localAddresses.contains(datagramIn.senderAddress());
-        const QHostAddress senderAddress = ipLocal ? QHostAddress(QHostAddress::SpecialAddress::LocalHost) : datagramIn.senderAddress();
+        // On a dual-stack socket IPv4 peers may be reported as IPv4-mapped IPv6
+        // addresses (::ffff:a.b.c.d). Normalize them back to plain IPv4 so that
+        // local-address detection and session target bookkeeping stay consistent.
+        QHostAddress senderAddress = datagramIn.senderAddress();
+        if (senderAddress.protocol() == QAbstractSocket::NetworkLayerProtocol::IPv6Protocol) {
+            const QHostAddress ipv4(senderAddress.toIPv4Address());
+            if (!ipv4.isNull()) {
+                senderAddress = ipv4;
+            }
+        }
+
+        const bool ipLocal = senderAddress.isLoopback() || _localAddresses.contains(senderAddress);
+        if (ipLocal) {
+            senderAddress = QHostAddress(QHostAddress::SpecialAddress::LocalHost);
+        }
 
         QMutexLocker locker(&_sessionTargetsMutex);
         if (!containsTarget(_sessionTargets, senderAddress, datagramIn.senderPort())) {

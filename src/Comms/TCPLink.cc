@@ -37,7 +37,12 @@ TCPConfiguration::~TCPConfiguration()
 
 void TCPConfiguration::setHost(const QString &host)
 {
-    const QString cleanHost = host.trimmed();
+    QString cleanHost = host.trimmed();
+    // Strip IPv6 brackets (e.g. "[::1]" -> "::1") since QAbstractSocket does
+    // not accept bracketed literals
+    if (cleanHost.startsWith('[') && cleanHost.endsWith(']')) {
+        cleanHost = cleanHost.mid(1, cleanHost.size() - 2);
+    }
     if (cleanHost != _host) {
         _host = cleanHost;
         emit hostChanged();

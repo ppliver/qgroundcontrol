@@ -1,10 +1,7 @@
 name: Welcome
 
 on:
-  pull_request_target:  # zizmor: ignore[dangerous-triggers] posts a welcome comment via github-script; no checkout or PR code execution
-    types: [opened]
-  issues:
-    types: [opened]
+  workflow_dispatch:
 
 concurrency:
   # github.ref is always 'master' on issue/PR-open events, so key per item to avoid mutual cancels.

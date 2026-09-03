@@ -1,13 +1,7 @@
 name: Build Results
 
 on:
-  workflow_run:  # zizmor: ignore[dangerous-triggers] consumes completed-build artifacts + PR metadata; never checks out or runs PR head code
-    # GitHub requires literal workflow names here (no expressions). Keep this
-    # list in sync with build-config.json's `platform_workflows` plus any
-    # non-platform triggers (pre-commit). Drift is enforced by
-    # .github/scripts/tests/test_platform_workflow_names.py.
-    workflows: [Linux, Windows, MacOS, Android, pre-commit]
-    types: [completed]
+  workflow_dispatch:
 
 permissions:
   contents: read

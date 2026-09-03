@@ -1,57 +1,6 @@
 name: CI Scripts
 
 on:
-  pull_request:
-    paths:
-      - '.github/scripts/**'
-      - '.github/actions/**'
-      - '.github/workflows/**'
-      - '.github/build-config.json'
-      - '.vscode/*.default.json'
-      - 'CMakePresets.json'
-      - 'cmake/Helpers.cmake'
-      - 'cmake/modules/CPMPatchCache.cmake'
-      - 'cmake/install/**'
-      - 'cmake/presets/**'
-      - 'justfile'
-      - 'tools/setup/**'
-      - 'tools/*.py'
-      - 'tools/uv.lock'
-      - 'tools/tests/**'
-      - 'tools/common/**'
-      - 'tools/generators/**'
-      - 'tools/analyzers/**'
-      - 'tools/simulation/**'
-      - 'tools/translations/**'
-      - 'deploy/docker/**'
-      - 'deploy/linux/PKGBUILD.in'
-  push:
-    branches:
-      - master
-      - 'Stable*'
-    paths:
-      - '.github/scripts/**'
-      - '.github/actions/**'
-      - '.github/workflows/**'
-      - '.github/build-config.json'
-      - '.vscode/*.default.json'
-      - 'CMakePresets.json'
-      - 'cmake/Helpers.cmake'
-      - 'cmake/modules/CPMPatchCache.cmake'
-      - 'cmake/install/**'
-      - 'cmake/presets/**'
-      - 'justfile'
-      - 'tools/setup/**'
-      - 'tools/*.py'
-      - 'tools/uv.lock'
-      - 'tools/tests/**'
-      - 'tools/common/**'
-      - 'tools/generators/**'
-      - 'tools/analyzers/**'
-      - 'tools/simulation/**'
-      - 'tools/translations/**'
-      - 'deploy/docker/**'
-      - 'deploy/linux/PKGBUILD.in'
   workflow_dispatch:
 
 concurrency:

@@ -1,14 +1,6 @@
 name: CodeQL
 
 on:
-  push:
-    branches:
-      - master
-      - 'Stable*'
-    paths-ignore:
-      - 'docs/**'
-  pull_request:
-  merge_group:
   workflow_dispatch:
 
 concurrency:

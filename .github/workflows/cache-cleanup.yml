@@ -1,28 +1,7 @@
 name: Cache Cleanup
 
 on:
-  # Periodic GC leaves room for fresh rolling build caches.
-  schedule:
-    - cron: '17 */6 * * *'
   workflow_dispatch:
-    inputs:
-      branch:
-        description: 'Branch to clean (leave empty for all branches)'
-        required: false
-        type: string
-      dry-run:
-        description: 'List caches without deleting'
-        required: false
-        type: boolean
-        default: true
-      mode:
-        description: 'prune = keep newest build/dependency cache generations; wipe = delete all listed caches'
-        required: false
-        type: choice
-        options:
-          - prune
-          - wipe
-        default: prune
 
 permissions:
   contents: read

@@ -2,21 +2,6 @@ name: Build Profile
 
 on:
   workflow_dispatch:
-    inputs:
-      build_type:
-        description: 'Build type'
-        required: false
-        default: 'Release'
-        type: choice
-        options:
-          - Release
-          - RelWithDebInfo
-          - Debug
-      limit:
-        description: 'Rows per section in summary (TU/header/template ranks)'
-        required: false
-        default: '50'
-        type: string
 
 concurrency:
   group: ${{ github.workflow }}-${{ inputs.build_type || 'default' }}

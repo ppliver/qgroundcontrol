@@ -4,19 +4,6 @@ name: VM Builds
 # to keep them from bit-rotting. Heavy nested-VM builds: scoped to those dirs + manual dispatch.
 
 on:
-  push:
-    branches:
-      - master
-      - 'Stable*'
-    paths:
-      - 'deploy/multipass/**'
-      - 'deploy/vagrant/**'
-      - '.github/workflows/vm-builds.yml'
-  pull_request:
-    paths:
-      - 'deploy/multipass/**'
-      - 'deploy/vagrant/**'
-      - '.github/workflows/vm-builds.yml'
   workflow_dispatch:
 
 concurrency:

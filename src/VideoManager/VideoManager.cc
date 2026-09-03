@@ -178,6 +178,8 @@ void VideoManager::init(QQuickWindow *mainWindow)
     (void) connect(_videoSettings->udpUrl(), &Fact::rawValueChanged, this, &VideoManager::_videoSourceChanged);
     (void) connect(_videoSettings->rtspUrl(), &Fact::rawValueChanged, this, &VideoManager::_videoSourceChanged);
     (void) connect(_videoSettings->tcpUrl(), &Fact::rawValueChanged, this, &VideoManager::_videoSourceChanged);
+    (void) connect(_videoSettings->secondaryVideoEnabled(), &Fact::rawValueChanged, this, &VideoManager::_videoSourceChanged);
+    (void) connect(_videoSettings->secondaryVideoUrl(), &Fact::rawValueChanged, this, &VideoManager::_videoSourceChanged);
     (void) connect(_videoSettings->aspectRatio(), &Fact::rawValueChanged, this, &VideoManager::aspectRatioChanged);
     (void) connect(_videoSettings->lowLatencyMode(), &Fact::rawValueChanged, this, [this](const QVariant &value) { Q_UNUSED(value); _restartAllVideos(); });
     // rtpJitterLatencyMs needs a pipeline restart; route through _videoSourceChanged so _updateSettings
@@ -280,7 +282,8 @@ void VideoManager::_createVideoReceivers()
 #endif
     static const QStringList videoStreamList = {
         "videoContent",
-        "thermalVideo"
+        "thermalVideo",
+        "secondaryVideo"
     };
 
     QStringList existing;
@@ -475,6 +478,12 @@ bool VideoManager::hasVideo() const
     return (_videoSettings->streamEnabled()->rawValue().toBool() && _videoSettings->streamConfigured());
 }
 
+bool VideoManager::hasSecondaryVideo() const
+{
+    return (_videoSettings->secondaryVideoEnabled()->rawValue().toBool()
+            && !_videoSettings->secondaryVideoUrl()->rawValue().toString().isEmpty());
+}
+
 bool VideoManager::isUvc() const
 {
     return (!_uvcVideoSourceID.isEmpty() && UVCReceiver::enabled() && hasVideo());
@@ -519,7 +528,11 @@ void VideoManager::_videoSourceChanged()
         QGCCameraManager* camMgr = _activeVehicle->cameraManager();
         for (VideoReceiver *receiver : std::as_const(_videoReceivers)) {
             QGCVideoStreamInfo* info = nullptr;
-            if (receiver->isThermal()) {
+            if (receiver->isSecondary()) {
+                // The secondary stream is driven purely by its own URL setting,
+                // it never participates in MAVLink camera auto-discovery.
+                info = nullptr;
+            } else if (receiver->isThermal()) {
                 info = camMgr ? camMgr->thermalStreamInstance() : nullptr;
             } else {
                 info = camMgr ? camMgr->currentStreamInstance() : nullptr;
@@ -536,10 +549,11 @@ void VideoManager::_videoSourceChanged()
 
     if (changed) {
         emit hasVideoChanged();
+        emit hasSecondaryVideoChanged();
         emit isStreamSourceChanged();
         emit isAutoStreamChanged();
 
-        if (hasVideo()) {
+        if (hasVideo() || hasSecondaryVideo()) {
             _restartAllVideos();
         } else {
             stopVideo();
@@ -685,6 +699,16 @@ bool VideoManager::_updateSettings(VideoReceiver *receiver)
         // No settingsChanged: autoReconnect is live, doesn't require pipeline restart.
     }
 
+    if (receiver->isSecondary()) {
+        // The secondary stream is configured exclusively by its own URL setting and
+        // shares the low-latency/jitter/auto-reconnect receiver options with the primary.
+        const QString uri = _videoSettings->secondaryVideoEnabled()->rawValue().toBool()
+                ? _videoSettings->secondaryVideoUrl()->rawValue().toString()
+                : QString();
+        settingsChanged |= _updateVideoUri(receiver, uri);
+        return settingsChanged;
+    }
+
     if (receiver->isThermal()) {
         return settingsChanged;
     }
@@ -759,7 +783,9 @@ void VideoManager::_setActiveVehicle(Vehicle *vehicle)
 
         for (VideoReceiver *receiver : std::as_const(_videoReceivers)) {
             if (_activeVehicle->cameraManager()) {
-                if (receiver->isThermal()) {
+                if (receiver->isSecondary()) {
+                    receiver->setVideoStreamInfo(nullptr);
+                } else if (receiver->isThermal()) {
                     receiver->setVideoStreamInfo(_activeVehicle->cameraManager()->thermalStreamInstance());
                 } else {
                     receiver->setVideoStreamInfo(_activeVehicle->cameraManager()->currentStreamInstance());
@@ -842,7 +868,8 @@ void VideoManager::_startReceiver(VideoReceiver *receiver)
     }
 
     const QString source = _videoSettings->videoSource()->rawValue().toString();
-    const uint32_t timeout = ((source == VideoSettings::videoSourceRTSP) ? _videoSettings->rtspTimeout()->rawValue().toUInt() : 3);
+    // RTSP timeouts apply when either the primary source or this receiver's URI is RTSP
+    const uint32_t timeout = ((source == VideoSettings::videoSourceRTSP) || receiver->uri().startsWith(QStringLiteral("rtsp://"))) ? _videoSettings->rtspTimeout()->rawValue().toUInt() : 3;
 
     receiver->start(timeout);
 }
@@ -913,7 +940,7 @@ void VideoManager::_initVideoReceiver(VideoReceiver *receiver, QQuickWindow *win
 
     (void) connect(receiver, &VideoReceiver::streamingChanged, this, [this, receiver](bool active) {
         qCDebug(VideoManagerLog) << "Video" << receiver->name() << "streaming changed, active:" << (active ? "yes" : "no");
-        if (!receiver->isThermal()) {
+        if (!receiver->isThermal() && !receiver->isSecondary()) {
             _streaming = active;
             emit streamingChanged();
         }
@@ -921,7 +948,7 @@ void VideoManager::_initVideoReceiver(VideoReceiver *receiver, QQuickWindow *win
 
     (void) connect(receiver, &VideoReceiver::decodingChanged, this, [this, receiver](bool active) {
         qCDebug(VideoManagerLog) << "Video" << receiver->name() << "decoding changed, active:" << (active ? "yes" : "no");
-        if (!receiver->isThermal()) {
+        if (!receiver->isThermal() && !receiver->isSecondary()) {
             _decoding = active;
             emit decodingChanged();
         }
@@ -929,7 +956,7 @@ void VideoManager::_initVideoReceiver(VideoReceiver *receiver, QQuickWindow *win
 
     (void) connect(receiver, &VideoReceiver::recordingChanged, this, [this, receiver](bool active) {
         qCDebug(VideoManagerLog) << "Video" << receiver->name() << "recording changed, active:" << (active ? "yes" : "no");
-        if (!receiver->isThermal()) {
+        if (!receiver->isThermal() && !receiver->isSecondary()) {
             _recording = active;
             if (!active) {
                 _subtitleWriter->stopCapturingTelemetry();
@@ -940,14 +967,14 @@ void VideoManager::_initVideoReceiver(VideoReceiver *receiver, QQuickWindow *win
 
     (void) connect(receiver, &VideoReceiver::recordingStarted, this, [this, receiver](const QString &filename) {
         qCDebug(VideoManagerLog) << "Video" << receiver->name() << "recording started";
-        if (!receiver->isThermal()) {
+        if (!receiver->isThermal() && !receiver->isSecondary()) {
             _subtitleWriter->startCapturingTelemetry(filename, videoSize());
         }
     });
 
     (void) connect(receiver, &VideoReceiver::videoSizeChanged, this, [this, receiver](QSize size) {
         qCDebug(VideoManagerLog) << "Video" << receiver->name() << "resized. New resolution:" << size.width() << "x" << size.height();
-        if (!receiver->isThermal()) {
+        if (!receiver->isThermal() && !receiver->isSecondary()) {
             _videoSize = size;
             emit videoSizeChanged();
             emit aspectRatioChanged();
@@ -971,7 +998,7 @@ void VideoManager::_initVideoReceiver(VideoReceiver *receiver, QQuickWindow *win
 
     (void) _updateSettings(receiver);
 
-    if (hasVideo()) {
+    if (hasVideo() || (receiver->isSecondary() && hasSecondaryVideo())) {
         _startReceiver(receiver);
     }
 }

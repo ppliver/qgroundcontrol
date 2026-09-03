@@ -138,6 +138,12 @@ Item {
             property real bottomEdgeLeftInset: visible ? height + anchors.margins : 0
         }
 
+        // Secondary video floating window (draggable / resizable / stackable)
+        FlyViewSecondaryVideo {
+            id:     secondaryVideoWindow
+            z:      QGroundControl.zOrderWidgets
+        }
+
         FlyViewWidgetLayer {
             id:                     widgetLayer
             anchors.top:            parent.top
