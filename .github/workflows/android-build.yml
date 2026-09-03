@@ -82,13 +82,44 @@ jobs:
           python3 -m pip install --dry-run aqtinstall
           echo "Pip connectivity test passed"
 
+      # Qt 6.8+ reshuffled the online repository: Android packages moved from
+      # <host>/android to all_os/android. Probe the exact Updates.xml paths aqtinstall
+      # will request so a layout change fails in seconds instead of after a long build.
+      - name: Probe Qt repository paths
+        shell: bash
+        run: |
+          QT_VERSION="$(python3 -c "import json;print(json.load(open('.github/build-config.json'))['qt']['version'])")"
+          echo "Qt version from build-config.json: ${QT_VERSION}"
+          QT_NODOT="$(echo "$QT_VERSION" | tr -d '.')"
+          BASE="${QT_REPO_BASE:-https://download.qt.io/online/qtsdkrepository}"
+          URLS="
+          ${BASE}/linux_x64/desktop/qt${QT_NODOT}/qt${QT_NODOT}/Updates.xml
+          ${BASE}/all_os/android/qt${QT_NODOT}/qt${QT_NODOT}_arm64_v8a/Updates.xml
+          "
+          rc=0
+          for url in $URLS; do
+            code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 30 "$url" || echo "curl-error")
+            echo "$code  $url"
+            [ "$code" = "200" ] || rc=1
+          done
+          if [ "$rc" -ne 0 ]; then
+            echo "::error::Qt repository layout probe failed - aqtinstall will not find Qt $QT_VERSION"
+          fi
+          exit $rc
+
       - name: Build Setup (Android)
         id: setup
         uses: ./.github/actions/build-setup
         with:
           mode: android
           qt-host: linux
-          qt-arch: android_arm64_v8a
+          # Host Qt = build-machine tools (moc/qmlcachegen/...). This must be the
+          # desktop arch, NOT android_arm64_v8a: since Qt 6.7 Android packages live
+          # in the `all_os` repo, so a `desktop` install with an `android_*` arch
+          # resolves to a path that does not exist
+          # (online/qtsdkrepository/linux_x64/desktop/qt6_6111/qt6_6111_arm64_v8a).
+          # The Android target Qt is installed separately by the qt-android action.
+          qt-arch: linux_gcc_64
           aqt-source: ${{ env.AQT_SOURCE }}
           abis: ${{ env.QT_ANDROID_ABIS }}
           build-type: ${{ env.BUILD_TYPE }}
