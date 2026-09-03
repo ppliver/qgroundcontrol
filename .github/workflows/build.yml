@@ -102,33 +102,14 @@ jobs:
           build-dir: ${{ runner.temp }}/build
           build-type: ${{ env.BUILD_TYPE }}
 
-      - name: Create Installer
-        id: create-installer
-        shell: bash
-        run: |
-          set -xe
-          BUILD_DIR="${RUNNER_TEMP}/build"
-          echo "Building installer with CPack..."
-          cmake --build "${BUILD_DIR}" --config "${{ env.BUILD_TYPE }}" --target qgc-package --parallel
-          echo "Build complete, checking for installer..."
-          ls -la "${BUILD_DIR}"/*.exe 2>/dev/null || true
-          ls -la "${BUILD_DIR}"/*.zip 2>/dev/null || true
-          # Find any executable installer
-          INSTALLER=$(find "${BUILD_DIR}" -name "*.exe" -type f 2>/dev/null | head -1)
-          if [ -n "${INSTALLER}" ]; then
-            echo "installer_path=${INSTALLER}" >> "${GITHUB_OUTPUT}"
-            echo "Found installer: ${INSTALLER}"
-          else
-            echo "::warning::No .exe installer found, may need to check CPack configuration"
-            echo "installer_path=" >> "${GITHUB_OUTPUT}"
-          fi
-
-      - name: Upload Installer Artifact
-        if: steps.create-installer.outputs.installer_path != ''
+      - name: Upload Windows Executable
         uses: actions/upload-artifact@v4
         with:
           name: QGroundControl-Windows-x64
-          path: ${{ steps.create-installer.outputs.installer_path }}
+          path: |
+            ${{ runner.temp }}/build/${{ env.BUILD_TYPE }}/QGroundControl.exe
+            ${{ runner.temp }}/build/QGroundControl.exe
+          if-no-files-found: warn
           retention-days: 14
 
       - name: Upload build artifacts on failure
