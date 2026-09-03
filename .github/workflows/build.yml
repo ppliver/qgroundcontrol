@@ -172,6 +172,12 @@ jobs:
           pip config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple
           pip config set global.trusted-host pypi.tuna.tsinghua.edu.cn
 
+      - name: Set pip mirror for aqtinstall (China network)
+        shell: bash
+        run: |
+          pip config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple
+          pip config set global.trusted-host pypi.tuna.tsinghua.edu.cn
+
       - name: Build Setup (Android)
         id: setup
         uses: ./.github/actions/build-setup
