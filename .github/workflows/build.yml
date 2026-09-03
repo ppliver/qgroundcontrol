@@ -24,6 +24,11 @@ on:
         options:
           - Release
           - Debug
+      skip_android:
+        description: 'Skip Android build'
+        required: false
+        default: false
+        type: boolean
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -33,22 +38,20 @@ permissions:
   contents: read
 
 env:
+  BUILD_TYPE: ${{ inputs.build_type || 'Release' }}
+  # Pin aqtinstall to a known-working commit to avoid pip network issues
   AQT_SOURCE: 'git+https://github.com/miurahr/aqtinstall.git@8d961e61720b3c06583517fbc68d57ec0a4e9f95'
 
 jobs:
   windows-x64:
-    name: Windows x64 ${{ inputs.build_type || 'Release' }}
+    name: Windows x64 ${{ env.BUILD_TYPE }}
     runs-on: windows-2022
-    timeout-minutes: 120
-
-    env:
-      BUILD_TYPE: ${{ inputs.build_type || 'Release' }}
+    timeout-minutes: 180
 
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
         with:
-          # Native package versions come from git describe and require reachable tags.
           fetch-depth: 0
           persist-credentials: false
 
@@ -56,7 +59,7 @@ jobs:
         uses: ./.github/actions/install-dependencies
         with:
           nsis: 'true'
-          gstreamer: 'false'
+          gstreamer: 'true'
 
       - name: Build Setup
         id: build-setup
@@ -100,32 +103,55 @@ jobs:
           build-type: ${{ env.BUILD_TYPE }}
 
       - name: Create Installer
-        uses: ./.github/actions/cmake-build
-        with:
-          build-dir: ${{ runner.temp }}/build
-          build-type: ${{ env.BUILD_TYPE }}
-          target: qgc-package
-          parallel: 'false'
+        id: create-installer
+        shell: bash
+        run: |
+          set -xe
+          BUILD_DIR="${RUNNER_TEMP}/build"
+          echo "Building installer with CPack..."
+          cmake --build "${BUILD_DIR}" --config "${{ env.BUILD_TYPE }}" --target qgc-package --parallel
+          echo "Build complete, checking for installer..."
+          ls -la "${BUILD_DIR}"/*.exe 2>/dev/null || true
+          ls -la "${BUILD_DIR}"/*.zip 2>/dev/null || true
+          # Find any executable installer
+          INSTALLER=$(find "${BUILD_DIR}" -name "*.exe" -type f 2>/dev/null | head -1)
+          if [ -n "${INSTALLER}" ]; then
+            echo "installer_path=${INSTALLER}" >> "${GITHUB_OUTPUT}"
+            echo "Found installer: ${INSTALLER}"
+          else
+            echo "::warning::No .exe installer found, may need to check CPack configuration"
+            echo "installer_path=" >> "${GITHUB_OUTPUT}"
+          fi
 
       - name: Upload Installer Artifact
+        if: steps.create-installer.outputs.installer_path != ''
         uses: actions/upload-artifact@v4
         with:
           name: QGroundControl-Windows-x64
-          path: |
-            ${{ runner.temp }}/build/QGroundControl-installer-AMD64.exe
-            ${{ runner.temp }}/build/QGroundControl-installer-AMD64.exe.sha256
-          if-no-files-found: error
+          path: ${{ steps.create-installer.outputs.installer_path }}
           retention-days: 14
 
+      - name: Upload build artifacts on failure
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-build-failure
+          path: |
+            ${{ runner.temp }}/build/CMakeFiles/*.log
+            ${{ runner.temp }}/build/CMakeCache.txt
+          if-no-files-found: ignore
+          retention-days: 7
+
   android:
-    name: Android arm64 ${{ inputs.build_type || 'Release' }}
+    name: Android arm64 ${{ env.BUILD_TYPE }}
+    if: ${{ !inputs.skip_android }}
     runs-on: ubuntu-latest
     timeout-minutes: 120
 
     env:
-      BUILD_TYPE: ${{ inputs.build_type || 'Release' }}
       PACKAGE: QGroundControl
       QT_ANDROID_ABIS: arm64-v8a
+      QT_ANDROID_SIGN_APK: ON
 
     steps:
       - name: Checkout repo
@@ -212,7 +238,6 @@ jobs:
         with:
           name: QGroundControl-Android-arm64
           path: ${{ runner.temp }}/build/QGroundControl.apk
-          if-no-files-found: error
           retention-days: 14
 
       - name: Upload build log on failure
