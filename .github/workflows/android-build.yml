@@ -90,11 +90,15 @@ jobs:
         run: |
           QT_VERSION="$(python3 -c "import json;print(json.load(open('.github/build-config.json'))['qt']['version'])")"
           echo "Qt version from build-config.json: ${QT_VERSION}"
+          # aqtinstall builds the folder as qt{major}_{version with dots removed},
+          # e.g. 6.11.1 -> qt6_6111.
           QT_NODOT="$(echo "$QT_VERSION" | tr -d '.')"
+          QT_MAJOR="${QT_VERSION%%.*}"
+          QT_DIR="qt${QT_MAJOR}_${QT_NODOT}"
           BASE="${QT_REPO_BASE:-https://download.qt.io/online/qtsdkrepository}"
           URLS="
-          ${BASE}/linux_x64/desktop/qt${QT_NODOT}/qt${QT_NODOT}/Updates.xml
-          ${BASE}/all_os/android/qt${QT_NODOT}/qt${QT_NODOT}_arm64_v8a/Updates.xml
+          ${BASE}/linux_x64/desktop/${QT_DIR}/${QT_DIR}/Updates.xml
+          ${BASE}/all_os/android/${QT_DIR}/${QT_DIR}_arm64_v8a/Updates.xml
           "
           rc=0
           for url in $URLS; do
