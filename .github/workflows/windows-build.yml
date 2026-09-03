@@ -1,0 +1,98 @@
+name: Build Windows x64
+
+# Standalone Windows x64 build workflow - no Android dependency
+# Compiles QGroundControl for Windows x64 and uploads the executable as artifact.
+
+on:
+  push:
+    branches:
+      - master
+      - main
+    paths-ignore:
+      - 'docs/**'
+  pull_request:
+    paths-ignore:
+      - 'docs/**'
+  workflow_dispatch:
+    inputs:
+      build_type:
+        description: 'Build type'
+        required: false
+        default: 'Release'
+        type: choice
+        options:
+          - Release
+          - Debug
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  BUILD_TYPE: ${{ inputs.build_type || 'Release' }}
+
+jobs:
+  windows-x64:
+    name: Windows x64 ${{ inputs.build_type || 'Release' }}
+    runs-on: windows-2022
+    timeout-minutes: 180
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Install host build dependencies
+        uses: ./.github/actions/install-dependencies
+        with:
+          nsis: 'true'
+          gstreamer: 'true'
+
+      - name: Build Setup
+        id: build-setup
+        uses: ./.github/actions/build-setup
+        with:
+          qt-host: windows
+          qt-arch: win64_msvc2022_64
+          build-type: ${{ env.BUILD_TYPE }}
+
+      - name: Configure
+        uses: ./.github/actions/cmake-configure
+        with:
+          build-dir: ${{ runner.temp }}/build
+          build-type: ${{ env.BUILD_TYPE }}
+          preset: ${{ env.BUILD_TYPE == 'Debug' && 'Windows-debug' || 'Windows' }}
+          extra-args: >-
+            -DQGC_ENABLE_GST_VIDEOSTREAMING=ON
+
+      - name: Build
+        uses: ./.github/actions/cmake-build
+        with:
+          build-dir: ${{ runner.temp }}/build
+          build-type: ${{ env.BUILD_TYPE }}
+
+      - name: Upload Windows Executable
+        uses: actions/upload-artifact@v4
+        with:
+          name: QGroundControl-Windows-x64
+          path: |
+            ${{ runner.temp }}/build/${{ env.BUILD_TYPE }}/QGroundControl.exe
+            ${{ runner.temp }}/build/QGroundControl.exe
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Upload build logs on failure
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-build-failure
+          path: |
+            ${{ runner.temp }}/build/CMakeFiles/*.log
+            ${{ runner.temp }}/build/CMakeCache.txt
+          if-no-files-found: ignore
+          retention-days: 7
