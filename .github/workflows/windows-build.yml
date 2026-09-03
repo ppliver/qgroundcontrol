@@ -3,16 +3,10 @@ name: Build Windows x64
 # Standalone Windows x64 build workflow - no Android dependency
 # Compiles QGroundControl for Windows x64 and uploads the executable as artifact.
 
+# Windows x64 already built successfully (artifact produced). Automatic push/PR
+# triggers are paused to keep CI capacity on the Android build; trigger this
+# workflow manually whenever a new Windows artifact is wanted.
 on:
-  push:
-    branches:
-      - master
-      - main
-    paths-ignore:
-      - 'docs/**'
-  pull_request:
-    paths-ignore:
-      - 'docs/**'
   workflow_dispatch:
     inputs:
       build_type:
