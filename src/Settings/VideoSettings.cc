@@ -270,7 +270,6 @@ DECLARE_SETTINGSFACT_NO_FUNC(VideoSettings, secondaryVideoSource)
     }
     return _secondaryVideoSourceFact;
 }
-}
 
 bool VideoSettings::streamConfigured(void)
 {
