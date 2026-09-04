@@ -28,6 +28,7 @@
 #include <QtCore/QFutureWatcher>
 #include <QtCore/QRunnable>
 #include <QtCore/QTimer>
+#include <QtCore/QRegularExpression>
 #include <QtCore/QFile>
 #include <QtCore/QTextStream>
 #include <QtQml/QQmlEngine>
@@ -580,7 +581,7 @@ void VideoManager::_onLowMemory()
             line = in.readLine();
             if (line.startsWith("VmRSS:")) {
                 // VmRSS in kB
-                int rssKb = line.split()[1].toInt();
+                int rssKb = line.split(QRegularExpression("\s+"))[1].toInt();
                 qCDebug(VideoManagerLog) << "Current RSS:" << rssKb << "kB";
                 // Threshold: 400MB - if exceeded, disable secondary video
                 if (rssKb > 400000) {
