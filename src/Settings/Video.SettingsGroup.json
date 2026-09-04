@@ -57,6 +57,15 @@
             "keywords": "secondary,second video,dual video,rtsp,udp,tcp"
         },
         {
+            "name": "secondaryVideoSource",
+            "shortDesc": "Source type for secondary video stream (RTSP, UDP, TCP, etc.).",
+            "longDesc": "Select the type of video source for the secondary video window. Options include RTSP, UDP h.264, UDP h.265, TCP-MPEG2, and MPEG-TS streams.",
+            "type": "string",
+            "default": "RTSP Video Stream",
+            "label": "Secondary Video Source",
+            "keywords": "secondary,second video,dual video,rtsp,udp,tcp"
+        },
+        {
             "name": "videoSavePath",
             "shortDesc": "Video save directory",
             "longDesc": "Directory to save videos to.",

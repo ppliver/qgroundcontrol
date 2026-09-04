@@ -280,7 +280,19 @@ void GstVideoReceiver::start(uint32_t timeout)
             gst_clear_object(&_pipeline);
         }
 
-        if (!pipelineUp) {
+        if (pipelineUp) {
+            // gst_bin_add_many() above handed ownership of these elements to the bin, so
+            // gst_clear_object(&_pipeline) has already destroyed them together with the bin.
+            // Our members are non-owning aliases from that point on: null them WITHOUT unref.
+            // Leaving them non-null here used to leave pointers to freed elements, which the
+            // next stop() dereferenced (stop() reads the "drop" property of _recorderValve
+            // whenever _pipeline is set, and the reconnect path re-creates _pipeline).
+            _recorderValve = nullptr;
+            _decoderValve = nullptr;
+            _tee = nullptr;
+            _source = nullptr;
+        } else {
+            // Never added to a bin, so we still own the refs from gst_element_factory_make().
             gst_clear_object(&_recorderValve);
             gst_clear_object(&recorderQueue);
             gst_clear_object(&_decoderValve);
@@ -339,7 +351,12 @@ void GstVideoReceiver::stop()
             (void) g_signal_handlers_disconnect_by_data(bus, this);
 
             gboolean recordingValveClosed = TRUE;
-            g_object_get(_recorderValve, "drop", &recordingValveClosed, nullptr);
+            // _recorderValve is a non-owning alias owned by the pipeline bin. It is null when
+            // start() bailed out before creating it, so guard the read instead of dereferencing
+            // whatever the last pipeline left behind.
+            if (_recorderValve) {
+                g_object_get(_recorderValve, "drop", &recordingValveClosed, nullptr);
+            }
 
             if (!recordingValveClosed) {
                 (void) gst_element_send_event(_pipeline, gst_event_new_eos());
@@ -419,11 +436,6 @@ void GstVideoReceiver::stop()
             _pipeline = nullptr;
         }
 
-        _recorderValve = nullptr;
-        _decoderValve = nullptr;
-        _tee = nullptr;
-        _source = nullptr;
-
         _lastSourceFrameTime = 0;
 
         if (_streaming) {
@@ -434,6 +446,14 @@ void GstVideoReceiver::stop()
             qCDebug(GstVideoReceiverLog) << "Streaming did not start" << _uri;
         }
     }
+
+    // Null the element aliases unconditionally, not just inside `if (_pipeline)`: their lifetime
+    // is bounded by the pipeline bin, so any path that destroyed the pipeline must drop them too.
+    // A non-null alias to a freed element is what stop() used to dereference as a use-after-free.
+    _recorderValve = nullptr;
+    _decoderValve = nullptr;
+    _tee = nullptr;
+    _source = nullptr;
 
     qCDebug(GstVideoReceiverLog) << "Stopped" << _uri;
 
