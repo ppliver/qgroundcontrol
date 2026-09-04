@@ -14,6 +14,7 @@ public:
     DEFINE_SETTING_NAME_GROUP()
 
     DEFINE_SETTINGFACT(videoSource)
+    DEFINE_SETTINGFACT(secondaryVideoSource)
     DEFINE_SETTINGFACT(udpUrl)
     DEFINE_SETTINGFACT(tcpUrl)
     DEFINE_SETTINGFACT(rtspUrl)
