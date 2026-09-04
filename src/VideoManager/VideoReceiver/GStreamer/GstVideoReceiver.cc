@@ -90,6 +90,7 @@ GstVideoReceiver::GstVideoReceiver(QObject *parent)
 
 GstVideoReceiver::~GstVideoReceiver()
 {
+    _videoSink = nullptr; // non-owning alias; avoid dangling deref after releaseVideoSink()
     stop();
     _worker->shutdown();
 
@@ -465,17 +466,23 @@ void GstVideoReceiver::startDecoding(void *sink)
         return;
     }
 
-    if (!_pipeline) {
-        gst_clear_object(&_videoSink);
-    }
-
-    if (_videoSink || _decoding) {
+    if (_decoding) {
         qCDebug(GstVideoReceiverLog) << "Already decoding!" << _uri;
         emit onStartDecodingComplete(STATUS_INVALID_STATE);
         return;
     }
 
     GstElement *videoSink = GST_ELEMENT(sink);
+
+    // The sink element is owned by its creator (createVideoSink / QML VideoOutput) and must stay
+    // valid across stop()/reconnects. VideoManager re-calls startDecoding() with the same sink
+    // after a watchdog reconnect, so only reject a request for a *different* sink.
+    if (_videoSink && (_videoSink != videoSink)) {
+        qCCritical(GstVideoReceiverLog) << "VideoSink already set to a different sink" << _uri;
+        emit onStartDecodingComplete(STATUS_INVALID_STATE);
+        return;
+    }
+
     GstPad *pad = gst_element_get_static_pad(videoSink, "sink");
     if (!pad) {
         qCCritical(GstVideoReceiverLog) << "Unable to find sink pad of video sink" << _uri;
@@ -486,11 +493,14 @@ void GstVideoReceiver::startDecoding(void *sink)
     _lastVideoFrameTime = 0;
     _resetVideoSink = true;
 
-    _videoSinkProbeId = gst_pad_add_probe(pad, GST_PAD_PROBE_TYPE_BUFFER, _videoSinkProbe, this, nullptr);
+    // The buffer probe is removed in _shutdownDecodingBranch() on stop(); re-arm it on (re)start.
+    if (_videoSinkProbeId == 0) {
+        _videoSinkProbeId = gst_pad_add_probe(pad, GST_PAD_PROBE_TYPE_BUFFER, _videoSinkProbe, this, nullptr);
+    }
     gst_clear_object(&pad);
 
+    // Non-owning alias: the element is released by releaseVideoSink() at teardown, never here.
     _videoSink = videoSink;
-    gst_object_ref(_videoSink);
 
     _removingDecoder = false;
 
@@ -1148,7 +1158,6 @@ void GstVideoReceiver::_ensureVideoSinkInPipeline()
                  "sync", (_buffer >= 0),
                  NULL);
 
-    (void) gst_object_ref(_videoSink);
     (void) gst_bin_add(GST_BIN(_pipeline), _videoSink);
 
     // PAUSED (not READY) triggers downstream caps negotiation before source data arrives.
@@ -1355,7 +1364,9 @@ void GstVideoReceiver::_shutdownDecodingBranch()
             (void) gst_element_get_state(_videoSink, nullptr, nullptr, GST_CLOCK_TIME_NONE);
             gst_clear_object(&parent);
         }
-        gst_clear_object(&_videoSink);
+        // Do NOT gst_clear_object(&_videoSink): the sink is owned by its creator and must remain
+        // valid across stop() so it can be re-used on the next startDecoding() (reconnect).
+        // Its reference is dropped by releaseVideoSink() at teardown.
     }
 
     _removingDecoder = false;
