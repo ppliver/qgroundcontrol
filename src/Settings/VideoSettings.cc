@@ -261,6 +261,15 @@ DECLARE_SETTINGSFACT_NO_FUNC(VideoSettings, secondaryVideoUrl)
         connect(_secondaryVideoUrlFact, &Fact::valueChanged, this, &VideoSettings::_configChanged);
     }
     return _secondaryVideoUrlFact;
+
+DECLARE_SETTINGSFACT_NO_FUNC(VideoSettings, secondaryVideoSource)
+{
+    if (!_secondaryVideoSourceFact) {
+        _secondaryVideoSourceFact = _createSettingsFact(secondaryVideoSourceName);
+        connect(_secondaryVideoSourceFact, &Fact::valueChanged, this, &VideoSettings::_configChanged);
+    }
+    return _secondaryVideoSourceFact;
+}
 }
 
 bool VideoSettings::streamConfigured(void)
