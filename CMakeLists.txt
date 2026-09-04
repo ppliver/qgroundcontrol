@@ -5,13 +5,6 @@
 cmake_minimum_required(VERSION 3.25)
 
 # ----------------------------------------------------------------------------
-# App Version - auto-incremented on each feature commit
-# ----------------------------------------------------------------------------
-if(NOT DEFINED QGC_APP_VERSION)
-    set(QGC_APP_VERSION "0.0.3")
-endif()
-
-# ----------------------------------------------------------------------------
 # CMake Module Paths
 # ----------------------------------------------------------------------------
 list(APPEND CMAKE_MODULE_PATH
