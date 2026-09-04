@@ -90,7 +90,6 @@ GstVideoReceiver::GstVideoReceiver(QObject *parent)
 
 GstVideoReceiver::~GstVideoReceiver()
 {
-    _videoSink = nullptr; // non-owning alias; avoid dangling deref after releaseVideoSink()
     stop();
     _worker->shutdown();
 
@@ -281,7 +280,19 @@ void GstVideoReceiver::start(uint32_t timeout)
             gst_clear_object(&_pipeline);
         }
 
-        if (!pipelineUp) {
+        if (pipelineUp) {
+            // gst_bin_add_many() above handed ownership of these elements to the bin, so
+            // gst_clear_object(&_pipeline) has already destroyed them together with the bin.
+            // Our members are non-owning aliases from that point on: null them WITHOUT unref.
+            // Leaving them non-null here used to leave pointers to freed elements, which the
+            // next stop() dereferenced (stop() reads the "drop" property of _recorderValve
+            // whenever _pipeline is set, and the reconnect path re-creates _pipeline).
+            _recorderValve = nullptr;
+            _decoderValve = nullptr;
+            _tee = nullptr;
+            _source = nullptr;
+        } else {
+            // Never added to a bin, so we still own the refs from gst_element_factory_make().
             gst_clear_object(&_recorderValve);
             gst_clear_object(&recorderQueue);
             gst_clear_object(&_decoderValve);
@@ -340,7 +351,12 @@ void GstVideoReceiver::stop()
             (void) g_signal_handlers_disconnect_by_data(bus, this);
 
             gboolean recordingValveClosed = TRUE;
-            g_object_get(_recorderValve, "drop", &recordingValveClosed, nullptr);
+            // _recorderValve is a non-owning alias owned by the pipeline bin. It is null when
+            // start() bailed out before creating it, so guard the read instead of dereferencing
+            // whatever the last pipeline left behind.
+            if (_recorderValve) {
+                g_object_get(_recorderValve, "drop", &recordingValveClosed, nullptr);
+            }
 
             if (!recordingValveClosed) {
                 (void) gst_element_send_event(_pipeline, gst_event_new_eos());
@@ -420,11 +436,6 @@ void GstVideoReceiver::stop()
             _pipeline = nullptr;
         }
 
-        _recorderValve = nullptr;
-        _decoderValve = nullptr;
-        _tee = nullptr;
-        _source = nullptr;
-
         _lastSourceFrameTime = 0;
 
         if (_streaming) {
@@ -435,6 +446,14 @@ void GstVideoReceiver::stop()
             qCDebug(GstVideoReceiverLog) << "Streaming did not start" << _uri;
         }
     }
+
+    // Null the element aliases unconditionally, not just inside `if (_pipeline)`: their lifetime
+    // is bounded by the pipeline bin, so any path that destroyed the pipeline must drop them too.
+    // A non-null alias to a freed element is what stop() used to dereference as a use-after-free.
+    _recorderValve = nullptr;
+    _decoderValve = nullptr;
+    _tee = nullptr;
+    _source = nullptr;
 
     qCDebug(GstVideoReceiverLog) << "Stopped" << _uri;
 
@@ -466,23 +485,17 @@ void GstVideoReceiver::startDecoding(void *sink)
         return;
     }
 
-    if (_decoding) {
+    if (!_pipeline) {
+        gst_clear_object(&_videoSink);
+    }
+
+    if (_videoSink || _decoding) {
         qCDebug(GstVideoReceiverLog) << "Already decoding!" << _uri;
         emit onStartDecodingComplete(STATUS_INVALID_STATE);
         return;
     }
 
     GstElement *videoSink = GST_ELEMENT(sink);
-
-    // The sink element is owned by its creator (createVideoSink / QML VideoOutput) and must stay
-    // valid across stop()/reconnects. VideoManager re-calls startDecoding() with the same sink
-    // after a watchdog reconnect, so only reject a request for a *different* sink.
-    if (_videoSink && (_videoSink != videoSink)) {
-        qCCritical(GstVideoReceiverLog) << "VideoSink already set to a different sink" << _uri;
-        emit onStartDecodingComplete(STATUS_INVALID_STATE);
-        return;
-    }
-
     GstPad *pad = gst_element_get_static_pad(videoSink, "sink");
     if (!pad) {
         qCCritical(GstVideoReceiverLog) << "Unable to find sink pad of video sink" << _uri;
@@ -493,14 +506,11 @@ void GstVideoReceiver::startDecoding(void *sink)
     _lastVideoFrameTime = 0;
     _resetVideoSink = true;
 
-    // The buffer probe is removed in _shutdownDecodingBranch() on stop(); re-arm it on (re)start.
-    if (_videoSinkProbeId == 0) {
-        _videoSinkProbeId = gst_pad_add_probe(pad, GST_PAD_PROBE_TYPE_BUFFER, _videoSinkProbe, this, nullptr);
-    }
+    _videoSinkProbeId = gst_pad_add_probe(pad, GST_PAD_PROBE_TYPE_BUFFER, _videoSinkProbe, this, nullptr);
     gst_clear_object(&pad);
 
-    // Non-owning alias: the element is released by releaseVideoSink() at teardown, never here.
     _videoSink = videoSink;
+    gst_object_ref(_videoSink);
 
     _removingDecoder = false;
 
@@ -1158,6 +1168,7 @@ void GstVideoReceiver::_ensureVideoSinkInPipeline()
                  "sync", (_buffer >= 0),
                  NULL);
 
+    (void) gst_object_ref(_videoSink);
     (void) gst_bin_add(GST_BIN(_pipeline), _videoSink);
 
     // PAUSED (not READY) triggers downstream caps negotiation before source data arrives.
@@ -1364,9 +1375,7 @@ void GstVideoReceiver::_shutdownDecodingBranch()
             (void) gst_element_get_state(_videoSink, nullptr, nullptr, GST_CLOCK_TIME_NONE);
             gst_clear_object(&parent);
         }
-        // Do NOT gst_clear_object(&_videoSink): the sink is owned by its creator and must remain
-        // valid across stop() so it can be re-used on the next startDecoding() (reconnect).
-        // Its reference is dropped by releaseVideoSink() at teardown.
+        gst_clear_object(&_videoSink);
     }
 
     _removingDecoder = false;
