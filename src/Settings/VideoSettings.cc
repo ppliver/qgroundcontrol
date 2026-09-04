@@ -87,6 +87,8 @@ DECLARE_SETTINGGROUP(Video, "Video")
     for (const QVariant& vs : secVideoSourceList) {
         secVideoSourceCookedList.append(VideoSettings::tr(vs.toString().toStdString().c_str()));
     }
+    // Ensure secondaryVideoSource fact is created before accessing metadata map
+    secondaryVideoSource();
     _nameToMetaDataMap[secondaryVideoSourceName]->setEnumInfo(secVideoSourceCookedList, secVideoSourceList);
     _nameToMetaDataMap[secondaryVideoSourceName]->setRawDefaultValue(videoSourceRTSP);
 }
