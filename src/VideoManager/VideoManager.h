@@ -8,6 +8,7 @@
 #include <QtCore/QPromise>
 #include <QtCore/QObject>
 #include <QtCore/QSize>
+#include <QtCore/QTimer>
 #include <QtQmlIntegration/QtQmlIntegration>
 
 #ifdef QGC_UNITTEST_BUILD
@@ -133,6 +134,7 @@ private:
     SubtitleWriter *_subtitleWriter = nullptr;
     VideoSettings *_videoSettings = nullptr;
     QQuickWindow *_mainWindow = nullptr;
+    QTimer *_lowMemoryWarningTimer = nullptr;
     Vehicle *_activeVehicle = nullptr;
 
     std::atomic<InitState> _initState = InitState::NotStarted;
