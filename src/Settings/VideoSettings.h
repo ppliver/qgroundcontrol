@@ -54,7 +54,6 @@ public:
     QString  tcpVideoSource         () { return videoSourceTCP; }
     QString  mpegtsVideoSource      () { return videoSourceMPEGTS; }
     QString  disabledVideoSource    () { return videoDisabled; }
-    QString  secondaryVideoSource   () { return videoSourceRTSP; } // used as QML-constant default; UI selects via combobox
 
     /// Remove hardware forced-decoder options absent from the running GStreamer registry, and
     /// reset the active choice to Default if it was pruned. Call after the video backend has
