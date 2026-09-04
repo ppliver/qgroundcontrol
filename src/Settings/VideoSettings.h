@@ -44,6 +44,7 @@ public:
     Q_PROPERTY(QString  tcpVideoSource          READ tcpVideoSource         CONSTANT)
     Q_PROPERTY(QString  mpegtsVideoSource       READ mpegtsVideoSource      CONSTANT)
     Q_PROPERTY(QString  disabledVideoSource     READ disabledVideoSource    CONSTANT)
+    Q_PROPERTY(QString  secondaryVideoSource    READ secondaryVideoSource  CONSTANT)
 
     bool     streamConfigured       ();
     QString  rtspVideoSource        () { return videoSourceRTSP; }
@@ -52,6 +53,7 @@ public:
     QString  tcpVideoSource         () { return videoSourceTCP; }
     QString  mpegtsVideoSource      () { return videoSourceMPEGTS; }
     QString  disabledVideoSource    () { return videoDisabled; }
+    QString  secondaryVideoSource   () { return videoSourceRTSP; } // used as QML-constant default; UI selects via combobox
 
     /// Remove hardware forced-decoder options absent from the running GStreamer registry, and
     /// reset the active choice to Default if it was pruned. Call after the video backend has
