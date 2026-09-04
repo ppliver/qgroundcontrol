@@ -103,6 +103,7 @@ private slots:
     void _communicationLostChanged(bool communicationLost);
     void _setActiveVehicle(Vehicle *vehicle);
     void _videoSourceChanged();
+    void _onLowMemory();
 
 private:
     enum class InitState : uint8_t {
