@@ -93,14 +93,16 @@ public:
     /// debounce per-test so each one deterministically sees its own message.
     void resetRebootMessageDebounce() { _lastRebootMessageTime = QTime(); }
 
-signals:
-    void languageChanged(const QLocale &locale);
-
 
     /// Z-order value for floating widgets (e.g. secondary video window).
     /// Exposed to QML so secondary video can float above map/PiP.
     Q_PROPERTY(uint zOrderWidgets READ zOrderWidgets CONSTANT)
     uint zOrderWidgets() const { return 1000u; }
+
+signals:
+    void languageChanged(const QLocale &locale);
+
+
 public slots:
     void qmlAttemptWindowClose();
 
