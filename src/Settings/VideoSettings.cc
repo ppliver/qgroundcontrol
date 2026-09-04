@@ -261,7 +261,7 @@ DECLARE_SETTINGSFACT_NO_FUNC(VideoSettings, secondaryVideoUrl)
         connect(_secondaryVideoUrlFact, &Fact::valueChanged, this, &VideoSettings::_configChanged);
     }
     return _secondaryVideoUrlFact;
-
+}
 DECLARE_SETTINGSFACT_NO_FUNC(VideoSettings, secondaryVideoSource)
 {
     if (!_secondaryVideoSourceFact) {
@@ -270,7 +270,6 @@ DECLARE_SETTINGSFACT_NO_FUNC(VideoSettings, secondaryVideoSource)
     }
     return _secondaryVideoSourceFact;
 }
-
 bool VideoSettings::streamConfigured(void)
 {
     //-- First, check if it's autoconfigured
