@@ -28,6 +28,8 @@
 #include <QtCore/QFutureWatcher>
 #include <QtCore/QRunnable>
 #include <QtCore/QTimer>
+#include <QtCore/QFile>
+#include <QtCore/QTextStream>
 #include <QtQml/QQmlEngine>
 #include <QtQuick/QQuickItem>
 #include <QtQuick/QQuickWindow>
@@ -51,10 +53,15 @@ VideoManager::VideoManager(QObject *parent)
 
     (void) qRegisterMetaType<VideoReceiver::STATUS>("STATUS");
 
+    _lowMemoryWarningTimer->start();
     if (VideoBackend::needsAsyncInit()) {
+    (void) connect(_lowMemoryWarningTimer, &QTimer::timeout, this, &VideoManager::_onLowMemory);
         _backendDisabledForTests = VideoBackend::disabledForUnitTests();
+    _lowMemoryWarningTimer->setInterval(5000);  // Check every 5 seconds
         if (_backendDisabledForTests) {
+    _lowMemoryWarningTimer = new QTimer(this);
             qCInfo(VideoManagerLog) << "Skipping video backend initialization for unit tests";
+    // Monitor low memory to prevent OOM kill
         }
     }
 }
@@ -562,6 +569,34 @@ void VideoManager::_videoSourceChanged()
         qCDebug(VideoManagerLog) << "New Video Source:" << _videoSettings->videoSource()->rawValue().toString();
     }
 }
+
+void VideoManager::_onLowMemory()
+{
+    QFile statusFile(QString("/proc/%1/status").arg(QCoreApplication::applicationPid()));
+    if (statusFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        QTextStream in(&statusFile);
+        QString line;
+        while (!in.atEnd()) {
+            line = in.readLine();
+            if (line.startsWith("VmRSS:")) {
+                // VmRSS in kB
+                int rssKb = line.split()[1].toInt();
+                qCDebug(VideoManagerLog) << "Current RSS:" << rssKb << "kB";
+                // Threshold: 400MB - if exceeded, disable secondary video
+                if (rssKb > 400000) {
+                    qCWarning(VideoManagerLog) << "High memory usage detected (" << rssKb
+                               << "kB), disabling secondary video to prevent OOM kill";
+                    if (_videoSettings->secondaryVideoEnabled()->rawValue().toBool()) {
+                        _videoSettings->secondaryVideoEnabled()->setRawValue(false);
+                    }
+                }
+                break;
+            }
+        }
+        statusFile.close();
+    }
+}
+
 
 bool VideoManager::_updateUVC(VideoReceiver * /*receiver*/)
 {
