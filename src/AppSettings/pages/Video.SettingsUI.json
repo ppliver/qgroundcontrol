@@ -11,7 +11,11 @@
     "groups": [
         {
             "heading": "Video Source",
-            "keywords": ["video source", "camera", "stream"],
+            "keywords": [
+                "video source",
+                "camera",
+                "stream"
+            ],
             "enableWhen": "!autoStreamConfig",
             "headingDescription": "autoStreamConfig ? qsTr(\"Mavlink camera stream is automatically configured\") : \"\"",
             "controls": [
@@ -23,7 +27,14 @@
         },
         {
             "heading": "Connection",
-            "keywords": ["rtsp", "tcp", "udp", "mpegts", "video url", "stream url"],
+            "keywords": [
+                "rtsp",
+                "tcp",
+                "udp",
+                "mpegts",
+                "video url",
+                "stream url"
+            ],
             "showWhen": "!sourceDisabled && !autoStreamConfig",
             "controls": [
                 {
@@ -42,11 +53,21 @@
         },
         {
             "heading": "Secondary Video Stream",
-            "keywords": ["secondary video", "second video", "dual video", "video url"],
+            "keywords": [
+                "secondary video",
+                "second video",
+                "dual video",
+                "video url"
+            ],
             "headingDescription": "qsTr(\"Additional draggable video window shown in Fly View\")",
             "controls": [
                 {
                     "setting": "videoSettings.secondaryVideoEnabled"
+                },
+                {
+                    "setting": "videoSettings.secondaryVideoSource",
+                    "control": "combobox",
+                    "enableWhen": "QGroundControl.settingsManager.videoSettings.secondaryVideoEnabled.rawValue"
                 },
                 {
                     "setting": "videoSettings.secondaryVideoUrl",
@@ -56,7 +77,15 @@
         },
         {
             "heading": "Settings",
-            "keywords": ["aspect ratio", "low latency", "decoder", "hardware decode", "disable when disarmed", "gpu", "zero-copy"],
+            "keywords": [
+                "aspect ratio",
+                "low latency",
+                "decoder",
+                "hardware decode",
+                "disable when disarmed",
+                "gpu",
+                "zero-copy"
+            ],
             "showWhen": "!sourceDisabled",
             "controls": [
                 {
@@ -90,7 +119,14 @@
         },
         {
             "heading": "Local Video Storage",
-            "keywords": ["record", "recording format", "mp4", "mkv", "storage limit", "video file"],
+            "keywords": [
+                "record",
+                "recording format",
+                "mp4",
+                "mkv",
+                "storage limit",
+                "video file"
+            ],
             "showWhen": "!sourceDisabled",
             "controls": [
                 {
