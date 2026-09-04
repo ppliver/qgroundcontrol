@@ -73,6 +73,22 @@ DECLARE_SETTINGGROUP(Video, "Video")
 
     // Set default value for videoSource
     _setDefaults();
+
+    // Setup enum values for secondaryVideoSource settings into meta data
+    QVariantList secVideoSourceList;
+    secVideoSourceList.append(videoSourceRTSP);
+    secVideoSourceList.append(videoSourceUDPH264);
+    secVideoSourceList.append(videoSourceUDPH265);
+    secVideoSourceList.append(videoSourceTCP);
+    secVideoSourceList.append(videoSourceMPEGTS);
+    secVideoSourceList.insert(0, videoDisabled);
+
+    QStringList secVideoSourceCookedList;
+    for (const QVariant& vs : secVideoSourceList) {
+        secVideoSourceCookedList.append(VideoSettings::tr(vs.toString().toStdString().c_str()));
+    }
+    _nameToMetaDataMap[secondaryVideoSourceName]->setEnumInfo(secVideoSourceCookedList, secVideoSourceList);
+    _nameToMetaDataMap[secondaryVideoSourceName]->setRawDefaultValue(videoSourceRTSP);
 }
 
 void VideoSettings::_setDefaults()
