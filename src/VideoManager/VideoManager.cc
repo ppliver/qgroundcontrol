@@ -54,15 +54,16 @@ VideoManager::VideoManager(QObject *parent)
 
     (void) qRegisterMetaType<VideoReceiver::STATUS>("STATUS");
 
-    _lowMemoryWarningTimer->start();
-    if (VideoBackend::needsAsyncInit()) {
-    (void) connect(_lowMemoryWarningTimer, &QTimer::timeout, this, &VideoManager::_onLowMemory);
-        _backendDisabledForTests = VideoBackend::disabledForUnitTests();
-    _lowMemoryWarningTimer->setInterval(5000);  // Check every 5 seconds
-        if (_backendDisabledForTests) {
-    _lowMemoryWarningTimer = new QTimer(this);
-            qCInfo(VideoManagerLog) << "Skipping video backend initialization for unit tests";
     // Monitor low memory to prevent OOM kill
+    _lowMemoryWarningTimer = new QTimer(this);
+    _lowMemoryWarningTimer->setInterval(5000);
+    (void) connect(_lowMemoryWarningTimer, &QTimer::timeout, this, &VideoManager::_onLowMemory);
+    _lowMemoryWarningTimer->start();
+
+    if (VideoBackend::needsAsyncInit()) {
+        _backendDisabledForTests = VideoBackend::disabledForUnitTests();
+        if (_backendDisabledForTests) {
+            qCInfo(VideoManagerLog) << "Skipping video backend initialization for unit tests";
         }
     }
 }
