@@ -23,6 +23,7 @@
 #include <QtConcurrent/QtConcurrent>
 #include <QtCore/QApplicationStatic>
 #include <QtCore/QCoreApplication>
+#include <QtCore/QDateTime>
 #include <QtCore/QDir>
 #include <QtCore/QEventLoop>
 #include <QtCore/QFutureWatcher>
@@ -43,6 +44,16 @@ static constexpr const char *kFileExtension[VideoReceiver::FILE_FORMAT_MAX + 1] 
     "mp4"
 };
 
+// RSS (kB) at which streams are shed to stay clear of the vendor abnormal-memory killer.
+// 400 MB proved too late on ColorOS/OxygenOS — the process was killed before the shed helped.
+static constexpr int kRssShedSecondaryKb = 350 * 1024;
+static constexpr int kRssShedAllKb      = 420 * 1024;
+
+// Consecutive failed restarts allowed per receiver before we stop retrying. Bounds the stop/start
+// churn that rebuilt the GStreamer pipeline (and Android MediaCodec) fast enough to grow the
+// native heap until the OS killed us.
+static constexpr int kMaxRestartAttempts = 8;
+
 Q_APPLICATION_STATIC(VideoManager, _videoManagerInstance);
 
 VideoManager::VideoManager(QObject *parent)
@@ -54,9 +65,10 @@ VideoManager::VideoManager(QObject *parent)
 
     (void) qRegisterMetaType<VideoReceiver::STATUS>("STATUS");
 
-    // Monitor low memory to prevent OOM kill
+    // Monitor low memory to prevent OOM kill. 2 s sampling: at 5 s a fast RSS climb (pipeline
+    // rebuild storms on Android) could cover the gap to the ColorOS kill threshold between ticks.
     _lowMemoryWarningTimer = new QTimer(this);
-    _lowMemoryWarningTimer->setInterval(5000);
+    _lowMemoryWarningTimer->setInterval(2000);
     (void) connect(_lowMemoryWarningTimer, &QTimer::timeout, this, &VideoManager::_onLowMemory);
     _lowMemoryWarningTimer->start();
 
@@ -532,6 +544,12 @@ bool VideoManager::isStreamSource() const
 
 void VideoManager::_videoSourceChanged()
 {
+    // A settings change is fresh user intent: clear every restart budget so a receiver that already
+    // exhausted its attempts gets retried instead of staying dead until the app restarts.
+    for (VideoReceiver *receiver : std::as_const(_videoReceivers)) {
+        _resetReceiverRestartBudget(receiver);
+    }
+
     bool changed = false;
     if (_activeVehicle) {
         QGCCameraManager* camMgr = _activeVehicle->cameraManager();
@@ -575,28 +593,131 @@ void VideoManager::_videoSourceChanged()
 void VideoManager::_onLowMemory()
 {
     QFile statusFile(QString("/proc/%1/status").arg(QCoreApplication::applicationPid()));
-    if (statusFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
-        QTextStream in(&statusFile);
-        QString line;
-        while (!in.atEnd()) {
-            line = in.readLine();
-            if (line.startsWith("VmRSS:")) {
-                // VmRSS in kB
-                int rssKb = line.split(QRegularExpression("\\s+"))[1].toInt();
-                qCDebug(VideoManagerLog) << "Current RSS:" << rssKb << "kB";
-                // Threshold: 400MB - if exceeded, disable secondary video
-                if (rssKb > 400000) {
-                    qCWarning(VideoManagerLog) << "High memory usage detected (" << rssKb
-                               << "kB), disabling secondary video to prevent OOM kill";
-                    if (_videoSettings->secondaryVideoEnabled()->rawValue().toBool()) {
-                        _videoSettings->secondaryVideoEnabled()->setRawValue(false);
-                    }
-                }
-                break;
-            }
-        }
-        statusFile.close();
+    if (!statusFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        return;
     }
+
+    int rssKb = 0;
+    QTextStream in(&statusFile);
+    while (!in.atEnd()) {
+        const QString line = in.readLine();
+        if (line.startsWith("VmRSS:")) {
+            rssKb = line.split(QRegularExpression("\\s+"))[1].toInt();
+            break;
+        }
+    }
+    statusFile.close();
+
+    if (rssKb <= 0) {
+        return;
+    }
+
+    static qint64 s_lastLogMs = 0;
+    const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
+    if ((nowMs - s_lastLogMs) >= 10000) {
+        s_lastLogMs = nowMs;
+        qCInfo(VideoManagerLog) << "RSS" << (rssKb / 1024) << "MB";
+    }
+
+    // Ordered shed, well below the vendor's abnormal-memory kill threshold: 400 MB was already too
+    // late on ColorOS/OxygenOS, and by then the native heap is too fragmented to give anything back.
+    if (rssKb < kRssShedSecondaryKb) {
+        return;
+    }
+
+    if (_videoSettings->secondaryVideoEnabled()->rawValue().toBool()) {
+        qCWarning(VideoManagerLog) << "High memory usage (" << (rssKb / 1024)
+                                   << "MB) — disabling secondary video to avoid an OOM kill";
+        _videoSettings->secondaryVideoEnabled()->setRawValue(false);
+        return;
+    }
+
+    // Secondary is already off and RSS keeps climbing: stop every stream rather than be killed.
+    if (rssKb >= kRssShedAllKb && hasVideo()) {
+        qCWarning(VideoManagerLog) << "Memory still critical (" << (rssKb / 1024)
+                                   << "MB) — stopping all video to avoid an OOM kill";
+        stopVideo();
+        QGC::showAppMessage(QStringLiteral("Video stopped: memory usage reached %1 MB and the app was about to be "
+                                           "killed by the system. Reduce the number of active video streams.")
+                                .arg(rssKb / 1024));
+    }
+}
+
+bool VideoManager::_receiverShouldRun(VideoReceiver *receiver) const
+{
+    if (!receiver) {
+        return false;
+    }
+
+    if (receiver->isSecondary()) {
+        return (_videoSettings->secondaryVideoEnabled()->rawValue().toBool()
+                && !_videoSettings->secondaryVideoUrl()->rawValue().toString().isEmpty());
+    }
+
+    if (receiver->isThermal()) {
+        // Thermal has no URI setting — it is driven entirely by the MAVLink stream info.
+        return (receiver->videoStreamInfo() != nullptr);
+    }
+
+    return (hasVideo() && !receiver->uri().isEmpty());
+}
+
+void VideoManager::_resetReceiverRestartBudget(VideoReceiver *receiver)
+{
+    if (!receiver) {
+        return;
+    }
+
+    auto it = _restartState.find(receiver);
+    if (it == _restartState.end()) {
+        return;
+    }
+
+    it->attempts = 0;
+    ++it->token;  // invalidate any restart already queued against the old budget
+}
+
+void VideoManager::_scheduleReceiverRestart(VideoReceiver *receiver, const char *reason)
+{
+    if (!receiver) {
+        return;
+    }
+
+    // The stream is gone from the settings: drop the budget entirely instead of retrying forever.
+    if (!_receiverShouldRun(receiver)) {
+        _restartState.remove(receiver);
+        qCDebug(VideoManagerLog) << "Not restarting" << receiver->name() << "— stream no longer configured (" << reason << ")";
+        return;
+    }
+
+    ReceiverRestartState &state = _restartState[receiver];
+    state.attempts = std::min(state.attempts + 1, kMaxRestartAttempts + 1);
+    ++state.token;
+    const int attempts = state.attempts;
+    const quint64 token = state.token;
+
+    if (attempts > kMaxRestartAttempts) {
+        qCWarning(VideoManagerLog) << "Giving up on" << receiver->name() << "after" << (attempts - 1)
+                                   << "failed restarts (" << reason << "). Change a video setting to retry.";
+        return;
+    }
+
+    // 1s → 2s → 4s → 8s → 16s → 30s. The fixed 1 s retry used to win the race against the
+    // receiver's own backoff, so every hiccup rebuilt the pipeline at ~1 Hz.
+    const int delaySec = std::min(1 << std::min(attempts - 1, 5), 30);
+    qCInfo(VideoManagerLog) << "Restarting" << receiver->name() << "in" << delaySec << "s (attempt" << attempts
+                            << ", after" << reason << ")" << receiver->uri();
+
+    QTimer::singleShot(delaySec * 1000, receiver, [this, receiver, token]() {
+        const auto it = _restartState.constFind(receiver);
+        if ((it == _restartState.constEnd()) || (it->token != token)) {
+            return;  // superseded by a newer restart or a settings change
+        }
+        if (receiver->started() || !_receiverShouldRun(receiver)) {
+            return;
+        }
+        _startReceiver(receiver);
+    });
 }
 
 
@@ -946,6 +1067,8 @@ void VideoManager::_initVideoReceiver(VideoReceiver *receiver, QQuickWindow *win
         switch (status) {
         case VideoReceiver::STATUS_OK:
             receiver->setStarted(true);
+            // Stream is up: clear the failure budget so the next unrelated hiccup starts at 1 s again.
+            _resetReceiverRestartBudget(receiver);
             if (receiver->sink()) {
                 receiver->startDecoding(receiver->sink());
             }
@@ -954,10 +1077,8 @@ void VideoManager::_initVideoReceiver(VideoReceiver *receiver, QQuickWindow *win
         case VideoReceiver::STATUS_INVALID_STATE:
             break;
         default:
-            // Rate limit restarts on start failure.
-            QTimer::singleShot(1000, receiver, [this, receiver]() {
-                _restartVideo(receiver);
-            });
+            // Rate limit restarts on start failure — bounded backoff instead of a fixed 1 s retry.
+            _scheduleReceiverRestart(receiver, "start failed");
             break;
         }
     });
@@ -968,10 +1089,10 @@ void VideoManager::_initVideoReceiver(VideoReceiver *receiver, QQuickWindow *win
         if (status == VideoReceiver::STATUS_INVALID_URL) {
             qCDebug(VideoManagerLog) << "Invalid video URL. Not restarting";
         } else {
-            QTimer::singleShot(1000, receiver, [this, receiver]() {
-                qCDebug(VideoManagerLog) << "Restarting video receiver" << receiver->name() << receiver->uri();
-                _startReceiver(receiver);
-            });
+            // Bounded backoff. The old unconditional 1 s restart raced the receiver's own backoff
+            // reconnect, collapsing it into a ~1 s stop/start loop that rebuilt the pipeline (and the
+            // Android MediaCodec) continuously — the native-heap growth behind the OOM kills.
+            _scheduleReceiverRestart(receiver, "stopped");
         }
     });
 
