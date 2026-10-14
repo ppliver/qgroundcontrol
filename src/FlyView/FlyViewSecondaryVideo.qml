@@ -28,6 +28,9 @@ Item {
     readonly property real      _minWidthFactor:          0.10
     readonly property real      _maxWidthFactor:          0.75
     readonly property real      _titleBarHeight:          ScreenTools.defaultFontPixelHeight * 1.75
+    /// Top strip owned by the FlyView toolbar/status bar. The window must stay clear of it or it
+    /// paints underneath (and its title bar becomes untouchable, so it cannot be dragged back).
+    readonly property real      _topSafeMargin:           ScreenTools.toolbarHeight + ScreenTools.defaultFontPixelWidth * 0.5
 
     property bool               _windowShown:             true
     property bool               _componentComplete:       false
@@ -54,7 +57,7 @@ Item {
             windowFrame.width = pw * _minWidthFactor;
         }
         windowFrame.x = Math.max(0, Math.min(windowFrame.x, pw - windowFrame.width));
-        windowFrame.y = Math.max(0, Math.min(windowFrame.y, ph - windowFrame.height));
+        windowFrame.y = Math.max(_topSafeMargin, Math.min(windowFrame.y, ph - windowFrame.height));
     }
 
     // The floating window itself
@@ -151,7 +154,7 @@ Item {
                 drag.target:        windowFrame
                 drag.axis:          Drag.XAndYAxis
                 drag.minimumX:      0
-                drag.minimumY:      0
+                drag.minimumY:      _root._topSafeMargin
                 drag.maximumX:      _root.width - windowFrame.width
                 drag.maximumY:      _root.height - windowFrame.height
 
