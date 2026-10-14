@@ -272,6 +272,33 @@ DECLARE_SETTINGSFACT_NO_FUNC(VideoSettings, secondaryVideoSource)
     }
     return _secondaryVideoSourceFact;
 }
+
+DECLARE_SETTINGSFACT_NO_FUNC(VideoSettings, secondaryUdpUrl)
+{
+    if (!_secondaryUdpUrlFact) {
+        _secondaryUdpUrlFact = _createSettingsFact(secondaryUdpUrlName);
+        connect(_secondaryUdpUrlFact, &Fact::valueChanged, this, &VideoSettings::_configChanged);
+    }
+    return _secondaryUdpUrlFact;
+}
+
+DECLARE_SETTINGSFACT_NO_FUNC(VideoSettings, secondaryRtspUrl)
+{
+    if (!_secondaryRtspUrlFact) {
+        _secondaryRtspUrlFact = _createSettingsFact(secondaryRtspUrlName);
+        connect(_secondaryRtspUrlFact, &Fact::valueChanged, this, &VideoSettings::_configChanged);
+    }
+    return _secondaryRtspUrlFact;
+}
+
+DECLARE_SETTINGSFACT_NO_FUNC(VideoSettings, secondaryTcpUrl)
+{
+    if (!_secondaryTcpUrlFact) {
+        _secondaryTcpUrlFact = _createSettingsFact(secondaryTcpUrlName);
+        connect(_secondaryTcpUrlFact, &Fact::valueChanged, this, &VideoSettings::_configChanged);
+    }
+    return _secondaryTcpUrlFact;
+}
 bool VideoSettings::streamConfigured(void)
 {
     //-- First, check if it's autoconfigured
