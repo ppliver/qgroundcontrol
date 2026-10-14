@@ -139,10 +139,10 @@ private:
     void _scheduleReceiverRestart(VideoReceiver *receiver, const char *reason);
     /// True when this receiver's stream is still configured and therefore worth (re)starting.
     bool _receiverShouldRun(VideoReceiver *receiver) const;
-    /// Applies the source-type dropdown to the secondary URL: supplies a scheme when the URL has
-    /// none, and resolves udp (h.264) vs udp265 (h.265) — those two pick different caps,
-    /// depayloader and parser, and a plain "udp://" URL cannot say which codec is coming.
-    QString _normalizeSecondaryVideoUri(const QString &rawUri) const;
+    /// Builds the secondary stream URI the way the primary one is built: the source dropdown
+    /// selects the transport and supplies the scheme, the matching address field supplies host:port.
+    /// Empty when disabled or when the selected transport has no address yet.
+    QString _secondaryVideoUri() const;
 
     /// Clears the backoff/attempt budget after a successful start or a user-initiated settings change.
     void _resetReceiverRestartBudget(VideoReceiver *receiver);
