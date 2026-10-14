@@ -7,7 +7,6 @@
     "sourceDisabled": "videoSource === QGroundControl.settingsManager.videoSettings.disabledVideoSource",
     "isStreamSource": "QGroundControl.videoManager.isStreamSource",
     "rtpLatencyVisible": "!QGroundControl.settingsManager.videoSettings.lowLatencyMode.rawValue",
-    "secVideoEnabled": "QGroundControl.settingsManager.videoSettings.secondaryVideoEnabled.rawValue",
     "secVideoSource": "QGroundControl.settingsManager.videoSettings.secondaryVideoSource.rawValue"
   },
   "groups": [
@@ -64,24 +63,20 @@
       "headingDescription": "qsTr(\"Additional draggable video window shown in Fly View\")",
       "controls": [
         {
-          "setting": "videoSettings.secondaryVideoEnabled"
-        },
-        {
           "setting": "videoSettings.secondaryVideoSource",
-          "control": "combobox",
-          "enableWhen": "secVideoEnabled"
+          "control": "combobox"
         },
         {
           "setting": "videoSettings.secondaryRtspUrl",
-          "showWhen": "secVideoEnabled && secVideoSource === QGroundControl.settingsManager.videoSettings.rtspVideoSource"
+          "showWhen": "secVideoSource === QGroundControl.settingsManager.videoSettings.rtspVideoSource"
         },
         {
           "setting": "videoSettings.secondaryTcpUrl",
-          "showWhen": "secVideoEnabled && secVideoSource === QGroundControl.settingsManager.videoSettings.tcpVideoSource"
+          "showWhen": "secVideoSource === QGroundControl.settingsManager.videoSettings.tcpVideoSource"
         },
         {
           "setting": "videoSettings.secondaryUdpUrl",
-          "showWhen": "secVideoEnabled && (secVideoSource === QGroundControl.settingsManager.videoSettings.udp264VideoSource || secVideoSource === QGroundControl.settingsManager.videoSettings.udp265VideoSource || secVideoSource === QGroundControl.settingsManager.videoSettings.mpegtsVideoSource)"
+          "showWhen": "(secVideoSource === QGroundControl.settingsManager.videoSettings.udp264VideoSource || secVideoSource === QGroundControl.settingsManager.videoSettings.udp265VideoSource || secVideoSource === QGroundControl.settingsManager.videoSettings.mpegtsVideoSource)"
         }
       ]
     },
