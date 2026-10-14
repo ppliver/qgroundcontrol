@@ -201,6 +201,8 @@ void VideoManager::init(QQuickWindow *mainWindow)
     (void) connect(_videoSettings->tcpUrl(), &Fact::rawValueChanged, this, &VideoManager::_videoSourceChanged);
     (void) connect(_videoSettings->secondaryVideoEnabled(), &Fact::rawValueChanged, this, &VideoManager::_videoSourceChanged);
     (void) connect(_videoSettings->secondaryVideoUrl(), &Fact::rawValueChanged, this, &VideoManager::_videoSourceChanged);
+    // The source-type dropdown drives the URL scheme, so changing it must re-resolve the stream.
+    (void) connect(_videoSettings->secondaryVideoSource(), &Fact::rawValueChanged, this, &VideoManager::_videoSourceChanged);
     (void) connect(_videoSettings->aspectRatio(), &Fact::rawValueChanged, this, &VideoManager::aspectRatioChanged);
     (void) connect(_videoSettings->lowLatencyMode(), &Fact::rawValueChanged, this, [this](const QVariant &value) { Q_UNUSED(value); _restartAllVideos(); });
     // rtpJitterLatencyMs needs a pipeline restart; route through _videoSourceChanged so _updateSettings
@@ -662,6 +664,61 @@ bool VideoManager::_receiverShouldRun(VideoReceiver *receiver) const
     return (hasVideo() && !receiver->uri().isEmpty());
 }
 
+QString VideoManager::_normalizeSecondaryVideoUri(const QString &rawUri) const
+{
+    static const QStringList kSupportedSchemes = {
+        QStringLiteral("rtsp"), QStringLiteral("udp"), QStringLiteral("udp265"),
+        QStringLiteral("tcp"), QStringLiteral("mpegts")
+    };
+
+    const QString uri = rawUri.trimmed();
+    if (uri.isEmpty()) {
+        return QString();
+    }
+
+    const QString source = _videoSettings->secondaryVideoSource()->rawValue().toString();
+    QString wantedScheme;
+    if (source == VideoSettings::videoSourceUDPH264) {
+        wantedScheme = QStringLiteral("udp");
+    } else if (source == VideoSettings::videoSourceUDPH265) {
+        wantedScheme = QStringLiteral("udp265");
+    } else if (source == VideoSettings::videoSourceTCP) {
+        wantedScheme = QStringLiteral("tcp");
+    } else if (source == VideoSettings::videoSourceMPEGTS) {
+        wantedScheme = QStringLiteral("mpegts");
+    } else if (source == VideoSettings::videoDisabled) {
+        // "Video Stream Disabled" in the dropdown wins over a filled-in URL.
+        return QString();
+    } else {
+        wantedScheme = QStringLiteral("rtsp");
+    }
+
+    const int sep = uri.indexOf(QStringLiteral("://"));
+    const QString currentScheme = (sep > 0) ? uri.left(sep).toLower() : QString();
+    const bool currentSupported = kSupportedSchemes.contains(currentScheme);
+    const bool udpPair = ((currentScheme == QStringLiteral("udp")) || (currentScheme == QStringLiteral("udp265")))
+                       && ((wantedScheme == QStringLiteral("udp")) || (wantedScheme == QStringLiteral("udp265")));
+
+    QString result = uri;
+    if (!currentSupported) {
+        // No usable scheme (a bare "host:port" for instance): adopt the dropdown's.
+        result = wantedScheme + QStringLiteral("://") + uri;
+    } else if (udpPair && (currentScheme != wantedScheme)) {
+        // udp vs udp265 is the one ambiguity the URL cannot settle by itself — both are "udp" to a
+        // reader, but they select different caps, depayloader and parser. The dropdown is the
+        // explicit statement of which codec to expect. rtsp/tcp/mpegts are left untouched so a
+        // filled-in URL always beats the dropdown's default.
+        result = wantedScheme + QStringLiteral("://") + uri.mid(sep + 3);
+    }
+
+    if (result != uri) {
+        qCInfo(VideoManagerLog) << "Secondary video URL normalized:" << uri << "->" << result
+                                << "(source:" << source << ")";
+    }
+
+    return result;
+}
+
 void VideoManager::_resetReceiverRestartBudget(VideoReceiver *receiver)
 {
     if (!receiver) {
@@ -858,10 +915,11 @@ bool VideoManager::_updateSettings(VideoReceiver *receiver)
     }
 
     if (receiver->isSecondary()) {
-        // The secondary stream is configured exclusively by its own URL setting and
-        // shares the low-latency/jitter/auto-reconnect receiver options with the primary.
+        // The secondary stream is driven by its own URL setting and shares the low-latency /
+        // jitter / auto-reconnect receiver options with the primary. The source-type dropdown
+        // supplies the scheme when the URL has none, and resolves the udp vs udp265 ambiguity.
         const QString uri = _videoSettings->secondaryVideoEnabled()->rawValue().toBool()
-                ? _videoSettings->secondaryVideoUrl()->rawValue().toString()
+                ? _normalizeSecondaryVideoUri(_videoSettings->secondaryVideoUrl()->rawValue().toString())
                 : QString();
         settingsChanged |= _updateVideoUri(receiver, uri);
         return settingsChanged;
