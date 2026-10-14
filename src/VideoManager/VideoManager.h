@@ -159,6 +159,10 @@ private:
     QQuickWindow *_mainWindow = nullptr;
     QTimer *_lowMemoryWarningTimer = nullptr;
     Vehicle *_activeVehicle = nullptr;
+    /// Set when memory pressure forced the secondary stream off. Deliberately *not* a setting:
+    /// it must not overwrite what the user picked in the source dropdown, and it resolves
+    /// itself once RSS comes back down.
+    bool _secondaryShedByLowMemory = false;
 
     std::atomic<InitState> _initState = InitState::NotStarted;
     // Orders _backendInitFuture publication against cross-thread waiters.
