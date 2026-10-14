@@ -48,6 +48,9 @@ static constexpr const char *kFileExtension[VideoReceiver::FILE_FORMAT_MAX + 1] 
 // 400 MB proved too late on ColorOS/OxygenOS — the process was killed before the shed helped.
 static constexpr int kRssShedSecondaryKb = 350 * 1024;
 static constexpr int kRssShedAllKb      = 420 * 1024;
+// Recovery must clear the shed threshold by this much, otherwise dropping one buffer could
+// put us right back over the line and the window would flicker on and off around 350 MB.
+static constexpr int kRssRecoveryHysteresisKb = 60 * 1024;
 
 // Consecutive failed restarts allowed per receiver before we stop retrying. Bounds the stop/start
 // churn that rebuilt the GStreamer pipeline (and Android MediaCodec) fast enough to grow the
@@ -199,13 +202,24 @@ void VideoManager::init(QQuickWindow *mainWindow)
     (void) connect(_videoSettings->udpUrl(), &Fact::rawValueChanged, this, &VideoManager::_videoSourceChanged);
     (void) connect(_videoSettings->rtspUrl(), &Fact::rawValueChanged, this, &VideoManager::_videoSourceChanged);
     (void) connect(_videoSettings->tcpUrl(), &Fact::rawValueChanged, this, &VideoManager::_videoSourceChanged);
-    (void) connect(_videoSettings->secondaryVideoEnabled(), &Fact::rawValueChanged, this, &VideoManager::_videoSourceChanged);
     // Mirrors the primary stream: the dropdown picks the transport and only that transport's
     // address field is shown, so all three (plus the dropdown) must re-resolve the stream.
-    (void) connect(_videoSettings->secondaryVideoSource(), &Fact::rawValueChanged, this, &VideoManager::_videoSourceChanged);
-    (void) connect(_videoSettings->secondaryUdpUrl(), &Fact::rawValueChanged, this, &VideoManager::_videoSourceChanged);
-    (void) connect(_videoSettings->secondaryRtspUrl(), &Fact::rawValueChanged, this, &VideoManager::_videoSourceChanged);
-    (void) connect(_videoSettings->secondaryTcpUrl(), &Fact::rawValueChanged, this, &VideoManager::_videoSourceChanged);
+    // Editing any of them also means the user is asking for it back after a low-memory shed —
+    // note that _videoSourceChanged() itself must never clear that flag, or the shed would undo
+    // itself the instant it takes effect.
+    const auto secondaryEdited = [this](const QVariant &value) {
+        Q_UNUSED(value);
+        if (_secondaryShedByLowMemory) {
+            qCInfo(VideoManagerLog) << "Secondary video settings edited — clearing low-memory shed";
+            _secondaryShedByLowMemory = false;
+            emit hasSecondaryVideoChanged();
+        }
+        _videoSourceChanged();
+    };
+    (void) connect(_videoSettings->secondaryVideoSource(), &Fact::rawValueChanged, this, secondaryEdited);
+    (void) connect(_videoSettings->secondaryUdpUrl(), &Fact::rawValueChanged, this, secondaryEdited);
+    (void) connect(_videoSettings->secondaryRtspUrl(), &Fact::rawValueChanged, this, secondaryEdited);
+    (void) connect(_videoSettings->secondaryTcpUrl(), &Fact::rawValueChanged, this, secondaryEdited);
     (void) connect(_videoSettings->aspectRatio(), &Fact::rawValueChanged, this, &VideoManager::aspectRatioChanged);
     (void) connect(_videoSettings->lowLatencyMode(), &Fact::rawValueChanged, this, [this](const QVariant &value) { Q_UNUSED(value); _restartAllVideos(); });
     // rtpJitterLatencyMs needs a pipeline restart; route through _videoSourceChanged so _updateSettings
@@ -506,8 +520,8 @@ bool VideoManager::hasVideo() const
 
 bool VideoManager::hasSecondaryVideo() const
 {
-    return (_videoSettings->secondaryVideoEnabled()->rawValue().toBool()
-            && !_secondaryVideoUri().isEmpty());
+    // There is no separate on/off switch: the source dropdown carries "Video Stream Disabled".
+    return (!_secondaryShedByLowMemory && !_secondaryVideoUri().isEmpty());
 }
 
 bool VideoManager::isUvc() const
@@ -627,13 +641,23 @@ void VideoManager::_onLowMemory()
     // Ordered shed, well below the vendor's abnormal-memory kill threshold: 400 MB was already too
     // late on ColorOS/OxygenOS, and by then the native heap is too fragmented to give anything back.
     if (rssKb < kRssShedSecondaryKb) {
+        if (_secondaryShedByLowMemory && (rssKb <= (kRssShedSecondaryKb - kRssRecoveryHysteresisKb))) {
+            qCInfo(VideoManagerLog) << "Memory recovered (" << (rssKb / 1024) << "MB) — restoring secondary video";
+            _secondaryShedByLowMemory = false;
+            emit hasSecondaryVideoChanged();
+            _videoSourceChanged();
+        }
         return;
     }
 
-    if (_videoSettings->secondaryVideoEnabled()->rawValue().toBool()) {
+    // There is no longer a separate on/off switch, so shed into an internal flag instead of
+    // rewriting the dropdown to "Disabled" — the user's choice must survive a memory squeeze.
+    if (hasSecondaryVideo()) {
         qCWarning(VideoManagerLog) << "High memory usage (" << (rssKb / 1024)
-                                   << "MB) — disabling secondary video to avoid an OOM kill";
-        _videoSettings->secondaryVideoEnabled()->setRawValue(false);
+                                   << "MB) — shedding secondary video to avoid an OOM kill";
+        _secondaryShedByLowMemory = true;
+        emit hasSecondaryVideoChanged();
+        _videoSourceChanged();
         return;
     }
 
@@ -655,8 +679,7 @@ bool VideoManager::_receiverShouldRun(VideoReceiver *receiver) const
     }
 
     if (receiver->isSecondary()) {
-        return (_videoSettings->secondaryVideoEnabled()->rawValue().toBool()
-                && !_secondaryVideoUri().isEmpty());
+        return (!_secondaryShedByLowMemory && !_secondaryVideoUri().isEmpty());
     }
 
     if (receiver->isThermal()) {
@@ -901,9 +924,7 @@ bool VideoManager::_updateSettings(VideoReceiver *receiver)
         // Mirrors the primary stream: the dropdown selects the transport, the matching address
         // field supplies host:port, and the scheme is added here. The receiver still shares the
         // low-latency / jitter / auto-reconnect options with the primary.
-        const QString uri = _videoSettings->secondaryVideoEnabled()->rawValue().toBool()
-                ? _secondaryVideoUri()
-                : QString();
+        const QString uri = _secondaryVideoUri();
         settingsChanged |= _updateVideoUri(receiver, uri);
         return settingsChanged;
     }
