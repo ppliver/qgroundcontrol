@@ -3,11 +3,14 @@
 #include <atomic>
 #include <chrono>
 
+#include <QtCore/QDateTime>
 #include <QtCore/QFuture>
+#include <QtCore/QHash>
 #include <QtCore/QMutex>
 #include <QtCore/QPromise>
 #include <QtCore/QObject>
 #include <QtCore/QSize>
+#include <QtCore/QTimer>
 #include <QtQmlIntegration/QtQmlIntegration>
 
 #ifdef QGC_UNITTEST_BUILD
@@ -103,6 +106,7 @@ private slots:
     void _communicationLostChanged(bool communicationLost);
     void _setActiveVehicle(Vehicle *vehicle);
     void _videoSourceChanged();
+    void _onLowMemory();
 
 private:
     enum class InitState : uint8_t {
@@ -128,11 +132,37 @@ private:
     void _stopReceiver(VideoReceiver *receiver);
     static void _cleanupOldVideos();
 
+    /// Schedules a *bounded* restart: exponential backoff, an attempt cap, and a liveness check so a
+    /// receiver whose stream is gone (or that keeps failing) can't spin a stop/start loop. Unbounded
+    /// 1 s restarts rebuilt the GStreamer pipeline + Android MediaCodec over and over, and each
+    /// rebuild leaked native heap until ColorOS killed the process for "abnormal memory".
+    void _scheduleReceiverRestart(VideoReceiver *receiver, const char *reason);
+    /// True when this receiver's stream is still configured and therefore worth (re)starting.
+    bool _receiverShouldRun(VideoReceiver *receiver) const;
+    /// Builds the secondary stream URI the way the primary one is built: the source dropdown
+    /// selects the transport and supplies the scheme, the matching address field supplies host:port.
+    /// Empty when disabled or when the selected transport has no address yet.
+    QString _secondaryVideoUri() const;
+
+    /// Clears the backoff/attempt budget after a successful start or a user-initiated settings change.
+    void _resetReceiverRestartBudget(VideoReceiver *receiver);
+
+    struct ReceiverRestartState {
+        int attempts = 0;
+        quint64 token = 0;
+    };
+
+    QHash<VideoReceiver*, ReceiverRestartState> _restartState;
     QList<VideoReceiver*> _videoReceivers;
     SubtitleWriter *_subtitleWriter = nullptr;
     VideoSettings *_videoSettings = nullptr;
     QQuickWindow *_mainWindow = nullptr;
+    QTimer *_lowMemoryWarningTimer = nullptr;
     Vehicle *_activeVehicle = nullptr;
+    /// Set when memory pressure forced the secondary stream off. Deliberately *not* a setting:
+    /// it must not overwrite what the user picked in the source dropdown, and it resolves
+    /// itself once RSS comes back down.
+    bool _secondaryShedByLowMemory = false;
 
     std::atomic<InitState> _initState = InitState::NotStarted;
     // Orders _backendInitFuture publication against cross-thread waiters.

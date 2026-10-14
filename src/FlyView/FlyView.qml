@@ -138,12 +138,6 @@ Item {
             property real bottomEdgeLeftInset: visible ? height + anchors.margins : 0
         }
 
-        // Secondary video floating window (draggable / resizable / stackable)
-        FlyViewSecondaryVideo {
-            id:     secondaryVideoWindow
-            z:      QGroundControl.zOrderWidgets
-        }
-
         FlyViewWidgetLayer {
             id:                     widgetLayer
             anchors.top:            parent.top
@@ -223,5 +217,15 @@ Item {
         id:                 toolbar
         guidedValueSlider:  _guidedValueSlider
         visible:            !QGroundControl.videoManager.fullScreen
+    }
+
+    // Secondary video floating window (draggable / resizable / stackable).
+    // It lives at FlyView root level *after* the toolbar on purpose: while it was a child of
+    // mapHolder its z only ordered it against mapHolder's siblings-in-branch, so the toolbar —
+    // a sibling of mapHolder declared later — painted over it and swallowed the touches on the
+    // title bar. Being a later sibling of the toolbar is what actually puts it on top.
+    FlyViewSecondaryVideo {
+        id:     secondaryVideoWindow
+        z:      QGroundControl.zOrderWidgets
     }
 }
