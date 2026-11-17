@@ -165,7 +165,7 @@
             "shortDesc": "Minimize video latency by disabling RTP playout buffering and retransmission recovery.",
             "longDesc": "Sets RTP playout latency to zero and disables retransmission recovery. This reduces delay but may increase dropped or corrupted frames on lossy or reordered networks.",
             "type": "bool",
-            "default": false,
+            "default": true,
             "label": "Low Latency Mode",
             "keywords": "low latency"
         },
