@@ -44,7 +44,7 @@ env:
 jobs:
   android-arm64:
     name: Android arm64 ${{ inputs.build_type || 'Debug' }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 120
 
     env:
