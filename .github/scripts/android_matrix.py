@@ -33,7 +33,7 @@ LINUX_JOB: Leg = {
     "primary": True,
     "emulator": False,
     "runson_runner": "linux-x64-builder",
-    "fallback_runner": "ubuntu-latest",
+    "fallback_runner": "ubuntu-24.04",
 }
 
 MAC_JOB: Leg = {
@@ -65,7 +65,7 @@ LINUX_EMULATOR_JOB: Leg = {
     "primary": False,
     "emulator": True,
     "runson_runner": "linux-x64-emulator",
-    "fallback_runner": "ubuntu-latest",
+    "fallback_runner": "ubuntu-24.04",
 }
 
 
